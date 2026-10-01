@@ -1,5 +1,8 @@
 # SparseElementaryDivisors.jl
 
+[![CI](https://github.com/yvesguiraud/SparseElementaryDivisors.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/yvesguiraud/SparseElementaryDivisors.jl/actions/workflows/CI.yml)
+[![codecov](https://codecov.io/gh/yvesguiraud/SparseElementaryDivisors.jl/graph/badge.svg)](https://codecov.io/gh/yvesguiraud/SparseElementaryDivisors.jl)
+
 Elementary divisors (Smith normal form) of **large sparse integer matrices**, in Julia.
 
 The matrix is first reduced by exact sparse elimination with unit pivots (Markowitz-style pivot choice, parallel pivot search and parallel fill-in application, checked integer arithmetic); the small remaining "core" is handed to [Hecke.jl](https://github.com/thofma/Hecke.jl). The result does not depend on the number of threads. The package was developed for the differentials of resolutions of Garside monoids (mostly in the context of the homology of real and complex braid groups), whose matrices have hundreds of thousands of rows and columns, and aims at the performance of Magma on such inputs.
