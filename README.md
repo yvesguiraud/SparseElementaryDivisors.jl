@@ -15,7 +15,13 @@ Any positive or negative experience on other matrices is most welcome!
 
 ```julia
 using Pkg
-Pkg.add(url = "https://github.com/yvesguiraud/SparseElementaryDivisors.jl")
+Pkg.add("SparseElementaryDivisors")
+```
+
+or press ] to enter package mode and then
+
+```julia
+add SparseElementaryDivisors
 ```
 
 ## Usage
