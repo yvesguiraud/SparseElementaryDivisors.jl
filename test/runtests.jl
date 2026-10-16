@@ -139,3 +139,5 @@ const sed = sparse_elementary_divisors
             "##MAGMA_ERROR_BEGIN##Runtime error##MAGMA_ERROR_END##")
     end
 end
+
+include("test_fingerprints.jl")

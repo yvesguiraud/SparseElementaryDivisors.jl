@@ -1,0 +1,3 @@
+%%MatrixMarket matrix coordinate integer general
+% G36, d_0 : C_1 -> C_0, lignes = C_0 (matrices/G36.jld2, gauss.jl)
+1 63 0

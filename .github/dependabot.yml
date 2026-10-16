@@ -1,0 +1,13 @@
+# Dependabot: weekly pull requests when a dependency releases a version outside the
+# [compat] bounds of Project.toml, and when a GitHub action used by the CI is updated.
+# The CI runs on these pull requests; merge them only when it is green.
+version: 2
+updates:
+  - package-ecosystem: "julia"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
