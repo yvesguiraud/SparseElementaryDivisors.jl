@@ -86,9 +86,9 @@ Notes: the SparseElementaryDivisors times are medians of 3 to 5 runs (2 runs for
 
 The package was developed with the help of an AI assistant.
 
-The starting point was a standard request to Google in August 2026, to see which tools existed to compute the elementary divisors of huge sparse matrices. Google's AI mode had just appeared and, starting from its answer, the conversation progressively led to a plan to improve the capabilities of Hecke.jl itself. It produced a first version that was already an improvement: for example, it reduced the computation for d₅ in type G₃₇ from almost two weeks to 45 minutes. At that point, Google's AI mode indicated that it was using the Claude Sonnet 3.5 model.
+The starting point was a standard request to Google in August 2026, to see which tools existed to compute the elementary divisors of huge sparse matrices. Google's AI mode had just appeared and, starting from its answer, the conversation progressively led to a plan to improve the tools to compute elementary divisors in Julia: starting from the functions of Hecke.jl, the goal is to try to reach performances similar to those of Magma, but in an open world. A first version was produced, and it was already an improvement: for example, it reduced the computation for d₅ in type G₃₇ from almost two weeks (with Hecke.jl) to 45 minutes. At that point, Google's AI mode indicated that it was using the Claude Sonnet 3.5 model.
 
-After that first prototype, the author used Claude (with the Sonnet 5, then Sonnet 5.5 models) to help with the subsequent development of the code, with the design of the documentation, and with the finalisation of the package.
+After that first prototype, the author used Claude (with the Sonnet 5, then Sonnet 5.5 models) to help with the subsequent development of the code, with the design of the documentation, and with the finalisation of version 0.1.0 of the package. The development continues, now using  Claude Opus 5.5 model.
 
 ## Acknowledgements
 
