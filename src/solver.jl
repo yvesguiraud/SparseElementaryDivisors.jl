@@ -165,6 +165,8 @@ end
     DualSparseMatrix(rows_data, m, n; max_tracked_degree = 10000, value_type::Type{T} = Int32)
 
 Build the matrix in linear time from the vector of `(j, v)` pairs of each row, already sorted by increasing row and column number. `value_type` sets the storage type of the coefficients (`T = Int32` by default).
+
+Precondition, not checked here (the loop writes with `@inbounds` and the merges assume it): `length(rows_data) == m` and, in each row, columns in `1:n` and strictly increasing. The public entry point checks it once with `_check_rows`; the conversions `_rows_data` produce such rows.
 """
 function DualSparseMatrix(rows_data::Vector{Vector{Tuple{Int, Int}}}, m::Int, n::Int;
                             max_tracked_degree::Int = 10000, value_type::Type{T} = Int32) where {T}

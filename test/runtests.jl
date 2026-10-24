@@ -43,6 +43,18 @@ end
 const NW = min(4, Threads.nthreads())
 const sed = sparse_elementary_divisors
 
+# True if `f()` throws an ArgumentError whose message contains `needle` (`@test_throws`
+# with a string checks the message only, not the type).
+function throws_argument_error(f, needle)
+    err = try
+        f()
+        nothing
+    catch e
+        e
+    end
+    return err isa ArgumentError && occursin(needle, sprint(showerror, err))
+end
+
 @testset "SparseElementaryDivisors" begin
 
     @testset "simple cases" begin
@@ -89,6 +101,35 @@ const sed = sparse_elementary_divisors
         end
         @test sed(S; value_type = Int64) == ref
         @test sed(Hecke.matrix(Hecke.ZZ, A); value_type = Int64) == ref          # ZZMatrix
+    end
+
+    @testset "invalid input" begin
+        R = Vector{Tuple{Int,Int}}
+        bad = throws_argument_error
+        # a valid 2 × 3 input, for comparison
+        @test sed([[(1, 1), (3, 2)], [(2, -1)]], 2, 3) == reference([1 0 2; 0 -1 0])
+        # columns out of range
+        @test bad(() -> sed([[(1, 1), (0, 2)], [(2, -1)]], 2, 3), "row 1 (entry 2): column 0 is outside 1:3")
+        @test bad(() -> sed([[(1, 1)], [(4, 1)]], 2, 3), "row 2 (entry 1): column 4 is outside 1:3")
+        @test bad(() -> sed([[(-2, 1)], [(2, 1)]], 2, 3), "row 1 (entry 1): column -2 is outside 1:3")
+        # unsorted and repeated columns
+        @test bad(() -> sed([[(3, 1), (1, 2)], [(2, 1)]], 2, 3), "row 1 (entry 2): column 1 after column 3")
+        @test bad(() -> sed([[(1, 1)], [(2, 1), (2, 5)]], 2, 3), "row 2 (entry 2): column 2 appears twice")
+        @test bad(() -> sed([[(1, 1)], [(2, 1), (2, 5)]], 2, 3), "sparse(I, J, V) sorts and sums duplicates")
+        # size
+        @test bad(() -> sed([[(1, 1)], [(2, 1)], [(3, 1)]], 2, 3), "rows has 3 rows but m = 2")
+        @test bad(() -> sed(R[], -1, 3), "m and n must be nonnegative (got m = -1, n = 3)")
+        @test bad(() -> sed([R()], 1, -1), "m and n must be nonnegative (got m = 1, n = -1)")
+        # the form (m, n, rows) is checked too
+        @test bad(() -> sed(2, 3, [[(1, 1)], [(4, 1)]]), "row 2 (entry 1): column 4 is outside 1:3")
+        # a non-canonical SparseMatrixCSC (row 1 twice in column 1) gives a repeated column
+        A = SparseMatrixCSC(2, 2, [1, 3, 4], [1, 1, 2], [1, 1, 1])
+        @test bad(() -> sed(A), "row 1 (entry 2): column 1 appears twice")
+        # valid limit cases: empty rows, no row, no column, zero values (ignored)
+        @test sed([R(), R()], 2, 3) == BigInt[]
+        @test sed(R[], 0, 3) == BigInt[]
+        @test sed([R(), R()], 2, 0) == BigInt[]
+        @test sed([[(1, 0), (2, 3)], [(1, 2), (3, 0)]], 2, 3) == reference([0 3 0; 2 0 0])
     end
 
     @testset "Matrix Market" begin

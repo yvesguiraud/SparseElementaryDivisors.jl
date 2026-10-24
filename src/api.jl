@@ -8,6 +8,33 @@ function _check_int(v, i, j)
     return Int(v)
 end
 
+# Check of the input given row by row, in one pass over the entries, before any
+# construction: `DualSparseMatrix` writes with `@inbounds` and its merges assume strictly
+# increasing column indices in each row. Stops at the first fault, with an ArgumentError
+# in terms of the matrix (row, column), whatever the form of the input.
+function _check_rows(rows::RowsData, m::Int, n::Int)
+    (m >= 0 && n >= 0) ||
+        throw(ArgumentError("m and n must be nonnegative (got m = $m, n = $n)"))
+    length(rows) == m ||
+        throw(ArgumentError("rows has $(length(rows)) rows but m = $m"))
+    for r ∈ 1:m
+        row = rows[r]
+        prev = 0
+        for k ∈ eachindex(row)
+            c = row[k][1]
+            1 <= c <= n ||
+                throw(ArgumentError("row $r (entry $k): column $c is outside 1:$n"))
+            if c <= prev
+                what = c == prev ? "column $c appears twice" : "column $c after column $prev"
+                throw(ArgumentError("row $r (entry $k): $what; the columns of each row must be " *
+                                    "strictly increasing (sparse(I, J, V) sorts and sums duplicates)"))
+            end
+            prev = c
+        end
+    end
+    return nothing
+end
+
 # Conversion from CSC: rows as (column, value) pairs sorted by increasing column.
 function _rows_data(A::SparseMatrixCSC{<:Integer})
     m, n = size(A)
@@ -61,7 +88,7 @@ end
 
 Non-zero elementary divisors of the integer matrix `A`, in increasing order: a `Vector{BigInt}` with `d[i] ∣ d[i+1]`.
 
-`A` can be a `SparseMatrixCSC` (fast path), any other `AbstractSparseMatrix` or `AbstractMatrix{<:Integer}` (converted), a Hecke matrix (`Hecke.SMat{ZZRingElem}` or `Hecke.ZZMatrix`), or the matrix given row by row: `rows[r]` is the list of `(column, value)` pairs of row `r`, sorted by increasing column, for an `m × n` matrix. With a file name, the matrix is read in Matrix Market format (see [`read_matrix_market`](@ref)).
+`A` can be a `SparseMatrixCSC` (fast path), any other `AbstractSparseMatrix` or `AbstractMatrix{<:Integer}` (converted), a Hecke matrix (`Hecke.SMat{ZZRingElem}` or `Hecke.ZZMatrix`), or the matrix given row by row: `rows[r]` is the list of `(column, value)` pairs of row `r`, with columns in `1:n` and strictly increasing, for an `m × n` matrix (zero values are allowed and ignored). The input is checked before the computation: an `ArgumentError` names the first fault (column out of range, unsorted or repeated column, wrong number of rows); unsorted triplets go through `sparse(I, J, V)`, which sorts them and sums duplicates. With a file name, the matrix is read in Matrix Market format (see [`read_matrix_market`](@ref)).
 
 - `value_type`: integer type used during the elimination (`Int32` by default, the fastest). An arithmetic overflow raises an explicit `ErrorException`; retry then with `Int64`, `Int128` or `BigInt`.
 - `nworkers`: number of parallel tasks (default: `Threads.nthreads()`); start Julia with `-t auto` or `-t N` to use them. The result does not depend on `nworkers`.
@@ -76,6 +103,7 @@ function sparse_elementary_divisors(rows::RowsData, m::Int, n::Int;
                                     acceptable_score_threshold::Int = 4,
                                     max_buckets_scanned::Int = 1,
                                     verbose::Bool = false)
+    _check_rows(rows, m, n)
     # The configuration is built at run time (not at precompilation time): the default `nworkers`
     # depends on `Threads.nthreads()` of the current session.
     config = nworkers === nothing ? ReductionConfig() : ReductionConfig(; nworkers = Int(nworkers))

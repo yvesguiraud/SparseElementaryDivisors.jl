@@ -40,7 +40,7 @@ Start Julia with several threads to benefit from the parallel steps: `julia -t a
 Accepted inputs:
 - `SparseMatrixCSC` (fast path), any other `AbstractSparseMatrix` or `AbstractMatrix{<:Integer}` (converted; dense matrices, adjoints and views work but are not efficient);
 - Hecke matrices: `Hecke.SMat{ZZRingElem}` and `Hecke.ZZMatrix`;
-- the matrix given row by row, `rows[r] = [(column, value), ...]` (sorted by column), together with its size: `sparse_elementary_divisors(rows, m, n)` or `sparse_elementary_divisors(m, n, rows)`;
+- the matrix given row by row, `rows[r] = [(column, value), ...]` (columns strictly increasing; checked, with an `ArgumentError` naming the first fault), together with its size: `sparse_elementary_divisors(rows, m, n)` or `sparse_elementary_divisors(m, n, rows)`;
 - a file name: the matrix is read in the [Matrix Market](https://math.nist.gov/MatrixMarket/formats.html) format (`coordinate` or `array`, `integer` or `pattern`, `general`, `symmetric` or `skew-symmetric`) by `read_matrix_market`, which can also be called directly.
 
 Main options:
