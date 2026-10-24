@@ -6,6 +6,15 @@ Diagnostic switch. If `true`, a row or column that becomes empty during a merge 
 """
 const RELEASE_EMPTY_VECTORS = Ref(false)
 
+"""
+    RowsData{V}
+
+A matrix given row by row: `rows[r]` is the vector of the `(column, value)` pairs of row `r`,
+columns strictly increasing, values of type `V <: Integer` (`Int`, or `BigInt` for entries
+beyond a machine word).
+"""
+const RowsData{V} = Vector{Vector{Tuple{Int, V}}}
+
 ######################
 ### Degree buckets ###
 ######################
@@ -166,9 +175,9 @@ end
 
 Build the matrix in linear time from the vector of `(j, v)` pairs of each row, already sorted by increasing row and column number. `value_type` sets the storage type of the coefficients (`T = Int32` by default).
 
-Precondition, not checked here (the loop writes with `@inbounds` and the merges assume it): `length(rows_data) == m` and, in each row, columns in `1:n` and strictly increasing. The public entry point checks it once with `_check_rows`; the conversions `_rows_data` produce such rows.
+Precondition, not checked here (the loop writes with `@inbounds` and the merges assume it): `length(rows_data) == m`, in each row columns in `1:n` and strictly increasing, and values that fit in `T`. The public entry point checks the first two once with `_check_rows` and chooses `T` accordingly; the conversions `_rows_data` produce such rows.
 """
-function DualSparseMatrix(rows_data::Vector{Vector{Tuple{Int, Int}}}, m::Int, n::Int;
+function DualSparseMatrix(rows_data::RowsData{<:Integer}, m::Int, n::Int;
                             max_tracked_degree::Int = 10000, value_type::Type{T} = Int32) where {T}
     row_cols = [Int[] for _ ∈ 1:m]
     row_vals = [T[] for _ ∈ 1:m]
@@ -348,16 +357,18 @@ end
 
 # Written directly into the shared scratch buffer (no separate compute/commit phases).
 
-# _sub_mul / _neg_mul / _checked_negate: checked arithmetic helpers.
-@inline _sub_mul(curr::T, factor::T, other::T) where {T<:Base.BitInteger} =
+# _sub_mul / _neg_mul / _checked_negate: checked arithmetic helpers, for the signed integers
+# of fixed width (those of Base, or wider ones such as Int256 of BitIntegers.jl, whose
+# *_with_overflow methods Base.checked_* use), plain arithmetic for BigInt.
+@inline _sub_mul(curr::T, factor::T, other::T) where {T<:Signed} =
     Base.checked_sub(curr, Base.checked_mul(factor, other))
 @inline _sub_mul(curr::BigInt, factor::BigInt, other::BigInt) = curr - factor * other
 
-@inline _neg_mul(factor::T, other::T) where {T<:Base.BitInteger} =
+@inline _neg_mul(factor::T, other::T) where {T<:Signed} =
     Base.checked_sub(zero(T), Base.checked_mul(factor, other))
 @inline _neg_mul(factor::BigInt, other::BigInt) = -(factor * other)
 
-@inline _checked_negate(v::T) where {T<:Base.BitInteger} = Base.checked_sub(zero(T), v)
+@inline _checked_negate(v::T) where {T<:Signed} = Base.checked_sub(zero(T), v)
 @inline _checked_negate(v::BigInt) = -v
 
 """
@@ -533,6 +544,15 @@ mutable struct ReductionTrace
 end
 ReductionTrace() = ReductionTrace(0xcbf29ce484222325, 0, 0, 0)
 
+# Back to the initial state (at the start of each attempt of the widening).
+function _reset!(tr::ReductionTrace)
+    tr.h = 0xcbf29ce484222325
+    tr.n_pivots = 0
+    tr.n_sge = 0
+    tr.sum_ones = 0
+    return tr
+end
+
 @inline function _trace_mix!(tr::ReductionTrace, x::Int)
     h = (tr.h ⊻ (x % UInt64)) * 0x00000100000001b3
     tr.h = h ⊻ (h >> 29)
@@ -553,7 +573,11 @@ Base.show(io::IO, tr::ReductionTrace) =
     print(io, "ReductionTrace(h=0x", string(tr.h; base = 16), ", pivots=", tr.n_pivots,
           ", sge=", tr.n_sge, ", ones_sge=", tr.sum_ones, ")")
 
-"Optional counters (calibration): rule decisions and accumulated times."
+"""
+Optional counters (calibration): rule decisions and accumulated times of the attempt that
+succeeded, value type it used (`nothing` before the end of a computation) and attempts
+that overflowed before it, as `(value_type, unit_pivots, seconds)`.
+"""
 mutable struct ReductionStats
     n_pivots::Int
     n_search_par::Int       # buckets scanned in parallel
@@ -563,8 +587,19 @@ mutable struct ReductionStats
     search_ns::Int
     apply_ns::Int
     sge_ns::Int
+    value_type::Union{Nothing, Type}
+    failed_attempts::Vector{NamedTuple{(:value_type, :unit_pivots, :seconds), Tuple{Type, Int, Float64}}}
 end
-ReductionStats() = ReductionStats(0, 0, 0, 0, 0, 0, 0, 0)
+ReductionStats() = ReductionStats(0, 0, 0, 0, 0, 0, 0, 0, nothing,
+                                  NamedTuple{(:value_type, :unit_pivots, :seconds), Tuple{Type, Int, Float64}}[])
+
+# The counters back to zero (at the start of each attempt of the widening); value_type and
+# failed_attempts are handled by the widening itself.
+function _reset_counters!(s::ReductionStats)
+    s.n_pivots = s.n_search_par = s.n_search_seq = s.n_apply_par = s.n_apply_seq = 0
+    s.search_ns = s.apply_ns = s.sge_ns = 0
+    return s
+end
 
 """
     ReductionConfig(; kwargs...)
@@ -1170,7 +1205,7 @@ function extract_core_smat(M::DualSparseMatrix)
             @inbounds old_c = M.row_cols[old_r][idx]
             @inbounds val = M.row_vals[old_r][idx]
             new_c = col_inverse[old_c]
-            new_c > 0 && push!(hecke_row, (new_c, Hecke.ZZ(val)))
+            new_c > 0 && push!(hecke_row, (new_c, Hecke.ZZ(_to_zz(val))))
         end
         push!(S, Hecke.sparse_row(Hecke.ZZ, hecke_row))
     end
@@ -1189,7 +1224,7 @@ end
     reduce_to_core!(M; acceptable_score_threshold = 4, max_buckets_scanned = 1,
                                     config = ReductionConfig())::Int
 
-Structured elimination + ±1 Markowitz loop. An `OverflowError` (including one coming from a parallel task) becomes an explicit `ErrorException` naming `T`; `M` is then inconsistent and MUST NOT be used any more.
+Structured elimination + ±1 Markowitz loop. An `OverflowError` (including one coming from a parallel task) becomes a [`CoefficientOverflowError`](@ref) naming `T`; `M` is then inconsistent and MUST NOT be used any more (the widening restarts from the input).
 """
 function reduce_to_core!(M::DualSparseMatrix{T};
                                          acceptable_score_threshold::Int = 4,
@@ -1212,10 +1247,7 @@ function reduce_to_core!(M::DualSparseMatrix{T};
         catch e
             ue = _unwrap_task_failure(e)
             ue isa OverflowError || rethrow()
-            error("Arithmetic overflow detected with value_type=$T, after $total_ones unit pivots. " *
-                  "The matrix is now in an inconsistent state and must not be used any more. " *
-                  "Restart the computation from the original data with a wider integer type " *
-                  "(Int64, Int128 or BigInt).")
+            throw(CoefficientOverflowError(T, total_ones, nothing))
         end
         pivot_ok || break
         total_ones += 1
@@ -1290,7 +1322,7 @@ function _reduce_and_divisors(M::DualSparseMatrix; acceptable_score_threshold::I
                                      core_format, dense_min_density, dense_max_bytes, verbose)
 end
 
-function _reduce_and_divisors(rows_data::Vector{Vector{Tuple{Int, Int}}}, m::Int, n::Int;
+function _reduce_and_divisors(rows_data::RowsData{<:Integer}, m::Int, n::Int;
                                    value_type::Type = Int32, acceptable_score_threshold::Int = 4,
                                    max_buckets_scanned::Int = 1,
                                    config::ReductionConfig = ReductionConfig(),
@@ -1301,6 +1333,52 @@ function _reduce_and_divisors(rows_data::Vector{Vector{Tuple{Int, Int}}}, m::Int
     M = DualSparseMatrix(rows_data, m, n; value_type)
     return _reduce_and_divisors!(M; acceptable_score_threshold, max_buckets_scanned, config,
                                      core_format, dense_min_density, dense_max_bytes, verbose)
+end
+
+"""
+    _reduce_and_divisors_widening(rows_data, m, n, value_types; config = ReductionConfig(),
+                                  verbose = false, kwargs...)
+
+`_reduce_and_divisors` with each type of `value_types` in turn, from the input, until one
+does not overflow (steps 2a and 2b of s3, v0.1.1). The trace and the counters of `config`
+are reset at the start of each attempt, so that they describe the attempt that succeeds
+(the choice of the pivots does not depend on the type: the trajectory is that of a direct
+computation with the type retained); `config.stats` also receives that type and the failed
+attempts. The overflow of the last type is rethrown. The retry happens outside the `catch`
+block, so that nothing of a failed attempt stays reachable.
+"""
+function _reduce_and_divisors_widening(rows_data::RowsData{<:Integer}, m::Int, n::Int, value_types;
+                                       config::ReductionConfig = ReductionConfig(),
+                                       verbose::Bool = false, kwargs...)
+    stats = config.stats
+    trace = config.trace
+    if stats !== nothing
+        stats.value_type = nothing
+        empty!(stats.failed_attempts)
+    end
+    k = length(value_types)
+    for (i, T) ∈ enumerate(value_types)
+        trace === nothing || _reset!(trace)
+        stats === nothing || _reset_counters!(stats)
+        t0 = time_ns()
+        result = try
+            _reduce_and_divisors(rows_data, m, n; value_type = T, config, verbose, kwargs...)
+        catch e
+            (e isa CoefficientOverflowError && i < k) || rethrow()
+            e
+        end
+        if result isa CoefficientOverflowError
+            seconds = (time_ns() - t0) / 1e9
+            stats === nothing ||
+                push!(stats.failed_attempts, (value_type = T, unit_pivots = result.unit_pivots, seconds))
+            verbose && println("value_type = $T: overflow after $(result.unit_pivots) unit pivots ",
+                               "($(round(seconds; digits = 2)) s), retrying with $(value_types[i + 1])")
+            continue
+        end
+        stats === nothing || (stats.value_type = T)
+        verbose && println("value_type = $T retained")
+        return result
+    end
 end
 
 # Variant without Hecke (profiling / measuring the Julia part).
@@ -1319,8 +1397,12 @@ end
 
 # Motivation (ZT2w4m5 d₄): core 9351×25417, nnz = 130 M; extraction to a Hecke `SMat` took 422 s (as long as the whole reduction), i.e. ~3.2 µs/entry versus ~0.25 µs/entry on G₃₇ d₅ (nnz = 2.7 M). Probable cause (not proven): GC pressure (one `ZZRingElem` and one intermediate tuple allocated per entry, pointer vectors to traverse). The variants below avoid these costs; none of them changes the result of the reduction.
 
-@inline _to_zz(v::Base.BitInteger) = Int(v)
-@inline _to_zz(v) = Hecke.ZZ(v)
+# A core coefficient for Flint: an Int when it fits a machine word (no allocation; for a
+# ZZRingElem, Hecke.ZZ(::Int) avoids the BigInt that Hecke.ZZ(::Int32) goes through), a
+# ZZRingElem otherwise. Int(v) on an Int128 beyond Int64 was the InexactError of v0.1.0.
+@inline _to_zz(v::Union{Int8, Int16, Int32, Int64}) = Int(v)
+@inline _to_zz(v::Int128) = typemin(Int) <= v <= typemax(Int) ? Int(v) : Hecke.ZZ(v)
+@inline _to_zz(v::Integer) = Hecke.ZZ(v)
 
 function _core_index_maps(M::DualSparseMatrix)
     active_rows = [r for r ∈ 1:M.num_rows if !isempty(M.row_cols[r])]
@@ -1354,7 +1436,7 @@ function extract_core_smat_direct(M::DualSparseMatrix)
             if new_c > 0
                 k += 1
                 pos[k] = new_c
-                zv[k] = Hecke.ZZ(vals[idx])
+                zv[k] = Hecke.ZZ(_to_zz(vals[idx]))
             end
         end
         resize!(pos, k); resize!(zv, k)

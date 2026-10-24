@@ -1,8 +1,8 @@
 # magma.jl — comparison with Magma (optional: requires a Magma installation, local or through SSH).
 
 # Magma's "flat" sparse format: for each row, the number of non-zero entries followed by the (column, value) pairs.
-function _magma_matrix_definition(rows::RowsData, m::Int, n::Int)
-    Q = Int[]
+function _magma_matrix_definition(rows::RowsData{V}, m::Int, n::Int) where {V<:Integer}
+    Q = promote_type(Int, V)[]
     for row ∈ rows
         push!(Q, length(row))
         for (c, v) ∈ row
@@ -42,7 +42,7 @@ Without `ssh_host`, `magma_command` is run locally; otherwise the command is run
 
 See [`magma_elementary_divisors`](@ref) for a version returning only the divisors.
 """
-function timed_magma_elementary_divisors(rows::RowsData, m::Int, n::Int;
+function timed_magma_elementary_divisors(rows::RowsData{<:Integer}, m::Int, n::Int;
                                          ssh_host::Union{Nothing,AbstractString} = nothing,
                                          magma_command::AbstractString = "magma -b",
                                          connect_timeout::Int = 15)
@@ -88,7 +88,7 @@ function timed_magma_elementary_divisors(rows::RowsData, m::Int, n::Int;
     return _parse_magma_output(result)
 end
 
-timed_magma_elementary_divisors(m::Int, n::Int, rows::RowsData; kwargs...) =
+timed_magma_elementary_divisors(m::Int, n::Int, rows::RowsData{<:Integer}; kwargs...) =
     timed_magma_elementary_divisors(rows, m, n; kwargs...)
 timed_magma_elementary_divisors(A::SparseMatrixCSC{<:Integer}; kwargs...) =
     timed_magma_elementary_divisors(_rows_data(A), size(A)...; kwargs...)

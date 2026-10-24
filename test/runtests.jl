@@ -1,6 +1,7 @@
 using Test, Random, SparseArrays
 using SparseElementaryDivisors
 import Hecke
+using BitIntegers: Int256
 
 # Reference: Hecke on the dense matrix, zeros removed, increasing order.
 function reference(A::AbstractMatrix{<:Integer})
@@ -42,6 +43,16 @@ end
 
 const NW = min(4, Threads.nthreads())
 const sed = sparse_elementary_divisors
+
+# The exception thrown by `f()`, or `nothing`.
+function caught(f)
+    try
+        f()
+    catch e
+        return e
+    end
+    return nothing
+end
 
 # True if `f()` throws an ArgumentError whose message contains `needle` (`@test_throws`
 # with a string checks the message only, not the type).
@@ -159,13 +170,69 @@ end
 
     @testset "explicit overflow" begin
         rows = random_rows_data(120, 120, 0.15; seed = 1)
-        @test_throws ErrorException sed(rows, 120, 120; value_type = Int8, nworkers = NW)
-        # after an overflow, a rerun with Int64 succeeds
-        @test sed(rows, 120, 120; value_type = Int64, nworkers = NW) isa Vector{BigInt}
+        @test_throws CoefficientOverflowError sed(rows, 120, 120; value_type = Int8, nworkers = NW)
+        err = caught(() -> sed(rows, 120, 120; value_type = Int8, nworkers = NW))
+        @test err.value_type === Int8 && err.entry === nothing && err.unit_pivots > 0
+        @test occursin("Arithmetic overflow detected with value_type=Int8, after $(err.unit_pivots) unit pivots",
+                       sprint(showerror, err))
+        # after an overflow, a rerun with Int64 succeeds; the default widens by itself
+        d64 = sed(rows, 120, 120; value_type = Int64, nworkers = NW)
+        @test d64 isa Vector{BigInt}
+        @test sed(rows, 120, 120; nworkers = NW) == d64
+        @test sed(rows, 120, 120; value_type = (Int8, Int16, Int32, Int64), nworkers = NW) == d64
     end
 
-    @testset "entries out of range" begin
-        @test_throws ArgumentError sed(sparse([big(2)^80 0; 0 1]))
+    @testset "value types and widening" begin
+        bad = throws_argument_error
+        A = sparse([2 4; 6 8])
+        for vt ∈ (UInt64, Float64, :fast, (), (Int64, Int32), (Int64, Int64), (BigInt, Int64), [Int256, Int128])
+            @test bad(() -> sed(A; value_type = vt), "value_type")
+        end
+        @test sed(A; value_type = [Int32, Int64]) == reference([2 4; 6 8])
+        # [1 a; a 0], a = 2^40: Int32 cannot hold a, Int64 overflows on a² = 2^80 (core −2^80)
+        a = 2^40
+        B = sparse([1 a; a 0])
+        expected = BigInt[1, big(2)^80]
+        @test sed(B) == expected                                   # :auto: Int64, then Int128
+        for fmt ∈ (:auto, :dense, :sparse)
+            @test sed(B; value_type = Int128, core_format = fmt) == expected
+        end
+        @test sed(B; value_type = (Int64, BigInt)) == expected
+        @test sed(B; value_type = (Int64, Int256)) == expected     # BitIntegers.jl
+        err = caught(() -> sed(B; value_type = Int32))
+        @test err isa CoefficientOverflowError && err.value_type === Int32 &&
+              err.unit_pivots == 0 && err.entry == (1, 2, big(2)^40)
+        @test occursin("input entry (1, 2) = 1099511627776 does not fit", sprint(showerror, err))
+        err = caught(() -> sed(B; value_type = Int64))
+        @test err isa CoefficientOverflowError && err.value_type === Int64 && err.entry === nothing
+        # Int128 with a dense core of small values
+        C = random_matrix(60, 80, 0.10; seed = 7)
+        @test sed(sparse(C); value_type = Int128, core_format = :dense) == reference(C)
+        # verbose: the failed attempt and the type retained
+        out = mktemp() do path, io
+            redirect_stdout(io) do
+                sed(B; verbose = true)
+            end
+            flush(io)
+            read(path, String)
+        end
+        @test occursin("value_type = Int64: overflow after 0 unit pivots", out)
+        @test occursin("retrying with Int128", out) && occursin("value_type = Int128 retained", out)
+    end
+
+    @testset "entries beyond a machine word" begin
+        b = big(2)^70
+        expected = BigInt[1, 3 * b]                                # diag(2^70, 3)
+        @test sed(sparse([b 0; 0 3])) == expected
+        @test sed([[(1, b)], [(2, big(3))]], 2, 2) == expected
+        S = Hecke.sparse_matrix(Hecke.ZZ)
+        push!(S, Hecke.sparse_row(Hecke.ZZ, [(1, Hecke.ZZ(b))]))
+        push!(S, Hecke.sparse_row(Hecke.ZZ, [(2, Hecke.ZZ(3))]))
+        @test sed(S) == expected
+        @test sed(Hecke.matrix(Hecke.ZZ, [b 0; 0 3])) == expected
+        err = caught(() -> sed(sparse([b 0; 0 3]); value_type = (Int32, Int64)))
+        @test err isa CoefficientOverflowError && err.value_type === Int64 && err.entry == (1, 1, b)
+        @test sed(sparse([-b 0; 0 3]); value_type = Int128) == expected
     end
 
     @testset "Magma (script generation and output parsing)" begin

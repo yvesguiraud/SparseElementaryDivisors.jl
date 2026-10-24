@@ -43,14 +43,16 @@ Accepted inputs:
 - the matrix given row by row, `rows[r] = [(column, value), ...]` (columns strictly increasing; checked, with an `ArgumentError` naming the first fault), together with its size: `sparse_elementary_divisors(rows, m, n)` or `sparse_elementary_divisors(m, n, rows)`;
 - a file name: the matrix is read in the [Matrix Market](https://math.nist.gov/MatrixMarket/formats.html) format (`coordinate` or `array`, `integer` or `pattern`, `general`, `symmetric` or `skew-symmetric`) by `read_matrix_market`, which can also be called directly.
 
+Entries of any integer type are accepted, including entries beyond a machine word (`BigInt`, `ZZRingElem`).
+
 Main options:
 
 | keyword | meaning |
 |---|---|
-| `value_type = Int32` | integer type used during the elimination; an arithmetic overflow raises an explicit error, in which case retry with `Int64`, `Int128` or `BigInt` |
+| `value_type = :auto` | integer type(s) of the coefficients, with checked arithmetic: `:auto` tries `Int32`, `Int64`, `Int128`, `BigInt` in turn (from the first one that holds the entries), restarting from the input after an overflow; a type (`Int64`) or a sequence (`(Int64, Int128)`) restricts the choice, and a `CoefficientOverflowError` is raised if the last type does not suffice |
 | `nworkers` | number of parallel tasks (default: `Threads.nthreads()`; lower it if the machine is shared, or for tiny matrices) |
 | `core_format = :auto` | format of the core passed to Hecke: `:sparse`, `:dense` or `:auto` |
-| `verbose = false` | print the size and format of the core |
+| `verbose = false` | print the attempts that overflowed, the type retained, and the size and format of the core |
 
 ## Comparison with Magma
 

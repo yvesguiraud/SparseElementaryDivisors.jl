@@ -10,9 +10,10 @@ module SparseElementaryDivisors
 using SparseArrays
 import Hecke
 
-export sparse_elementary_divisors, read_matrix_market,
+export sparse_elementary_divisors, read_matrix_market, CoefficientOverflowError,
        magma_elementary_divisors, timed_magma_elementary_divisors
 
+include("errors.jl")        # dedicated error (overflow of the coefficients)
 include("solver.jl")        # core reduction
 include("matrixmarket.jl")  # Matrix Market reader
 include("api.jl")           # public interface
