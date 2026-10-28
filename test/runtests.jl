@@ -235,6 +235,114 @@ end
         @test sed(sparse([-b 0; 0 3]); value_type = Int128) == expected
     end
 
+    @testset "ReductionConfig" begin
+        bad = throws_argument_error
+        c = ReductionConfig()
+        @test (c.acceptable_score_threshold, c.max_buckets_scanned, c.nworkers) == (4, 1, nothing)
+        @test (c.apply_min_work, c.apply_chunk_max, c.search_mode, c.search_parallel_min_work) ==
+              (25_000, 32, :auto, 5000)
+        @test (c.search_ns_per_entry, c.parallel_fixed_cost_ns, c.apply_parallel_penalty,
+               c.apply_ema_alpha) == (8.0, 50_000.0, 0.1, 0.05)
+        @test (c.search_chunk_min, c.search_chunk_max) == (4, 256)
+        @test (c.core_format, c.dense_min_density, c.dense_max_bytes, c.release_empty_vectors) ==
+              (:auto, 0.05, 16 * 2^30, false)
+        # display: only the fields that differ from the default, as a valid constructor call
+        @test sprint(show, c) == "ReductionConfig()"
+        c2 = ReductionConfig(nworkers = 4, search_mode = :always)
+        @test sprint(show, c2) == "ReductionConfig(nworkers = 4, search_mode = :always)"
+        @test eval(Meta.parse(sprint(show, c2))) === c2
+        # checks at construction
+        for (kw, needle) ∈ ((acceptable_score_threshold = -1,) => "acceptable_score_threshold must be ≥ 0",
+                            (max_buckets_scanned = 0,) => "max_buckets_scanned must be ≥ 1",
+                            (nworkers = 0,) => "nworkers must be nothing or ≥ 1 (got 0)",
+                            (apply_min_work = -1,) => "apply_min_work must be ≥ 0",
+                            (apply_chunk_max = 0,) => "apply_chunk_max must be ≥ 1",
+                            (search_mode = :alway,) => "search_mode must be :auto, :always, :never or :floor (got :alway)",
+                            (search_parallel_min_work = -1,) => "search_parallel_min_work must be ≥ 0",
+                            (search_ns_per_entry = -1.0,) => "search_ns_per_entry must be ≥ 0",
+                            (parallel_fixed_cost_ns = -1.0,) => "parallel_fixed_cost_ns must be ≥ 0",
+                            (apply_parallel_penalty = -0.1,) => "apply_parallel_penalty must be ≥ 0",
+                            (apply_ema_alpha = 0.0,) => "apply_ema_alpha must be in (0, 1]",
+                            (apply_ema_alpha = 1.5,) => "apply_ema_alpha must be in (0, 1]",
+                            (search_chunk_min = 0,) => "search_chunk_min must be ≥ 1",
+                            (search_chunk_min = 8, search_chunk_max = 4) => "search_chunk_max must be ≥ search_chunk_min",
+                            (core_format = :csc,) => "core_format must be :auto, :sparse or :dense",
+                            (dense_min_density = 1.5,) => "dense_min_density must be in [0, 1]",
+                            (dense_max_bytes = -1,) => "dense_max_bytes must be ≥ 0")
+            @test bad(() -> ReductionConfig(; kw...), needle)
+        end
+        # keywords of sparse_elementary_divisors: a field given directly wins over config
+        A = sparse(random_matrix(60, 80, 0.10; seed = 7))
+        ref = reference(Matrix(A))
+        st = ReductionStats()
+        @test sed(A; config = ReductionConfig(nworkers = 2), stats = st) == ref
+        @test st.nworkers == 2
+        @test sed(A; config = ReductionConfig(nworkers = 2), nworkers = 1, stats = st) == ref
+        @test st.nworkers == 1
+        @test sed(A; stats = st) == ref
+        @test st.nworkers == Threads.nthreads()
+        @test sed(A; value_type = Int64, search_mode = :never, apply_min_work = 0, core_format = :sparse,
+                  release_empty_vectors = true, acceptable_score_threshold = 0) == ref
+        @test bad(() -> sed(A; nworker = 2), "unknown keyword argument nworker")
+        @test bad(() -> sed(A; core_format = :csc), "core_format must be")
+    end
+
+    @testset "ReductionStats" begin
+        st = ReductionStats()
+        @test st.value_type === nothing && isempty(st.failed_attempts)
+        @test (st.unit_pivots, st.core_size, st.core_format, st.nworkers) == (0, (rows = 0, cols = 0, nnz = 0), :none, 0)
+        # empty core: two unit pivots of the structured elimination
+        @test sed(sparse([1 0; 0 1]); stats = st) == BigInt[1, 1]
+        @test (st.value_type, st.unit_pivots, st.markowitz_pivots) == (Int32, 2, 0)
+        @test (st.core_size, st.core_format) == ((rows = 0, cols = 0, nnz = 0), :none)
+        @test sprint(show, st) == "ReductionStats(value_type = Int32, unit_pivots = 2, core = 0×0)"
+        plain = sprint(show, MIME"text/plain"(), st)
+        @test occursin("unit pivots    2 (Markowitz 0)", plain) && occursin("core           0×0, 0 entries, none", plain)
+        # [1 a; a 0], a = 2^40: one Markowitz pivot, then a 1 × 1 core −2^80
+        a = 2^40
+        B = sparse([1 a; a 0])
+        expected = BigInt[1, big(2)^80]
+        for fmt ∈ (:sparse, :dense)
+            @test sed(B; value_type = Int128, core_format = fmt, stats = st) == expected
+            @test (st.value_type, st.unit_pivots, st.markowitz_pivots) == (Int128, 1, 1)
+            @test (st.core_size, st.core_format) == ((rows = 1, cols = 1, nnz = 1), fmt)
+            @test st.markowitz_pivots == st.parallel_applications + st.sequential_applications
+            @test all(>=(0), (st.sge_seconds, st.search_seconds, st.apply_seconds, st.core_seconds))
+            @test isempty(st.failed_attempts)
+        end
+        # widening: Int32 skipped (the input does not fit), Int64 overflows, Int128 retained
+        @test sed(B; stats = st) == expected
+        @test st.value_type === Int128 && st.core_format === :dense
+        @test [f.value_type for f ∈ st.failed_attempts] == [Int64]
+        @test all(f -> f.unit_pivots >= 0 && f.seconds >= 0, st.failed_attempts)
+        @test sprint(show, st) == "ReductionStats(value_type = Int128, unit_pivots = 1, core = 1×1, failed = [Int64])"
+        @test occursin("failed         Int64 after", sprint(show, MIME"text/plain"(), st))
+        # the last type does not suffice: the attempt is recorded, then the error raised
+        err = caught(() -> sed(B; value_type = Int64, stats = st))
+        @test err isa CoefficientOverflowError
+        @test st.value_type === nothing && [f.value_type for f ∈ st.failed_attempts] == [Int64]
+        # an input entry that fits no type: no attempt, the statistics are reset all the same
+        err = caught(() -> sed(B; value_type = Int32, stats = st))
+        @test err isa CoefficientOverflowError && err.entry !== nothing
+        @test st.value_type === nothing && isempty(st.failed_attempts)
+        # reused: everything reset at each call
+        @test sed(sparse([1 0; 0 1]); stats = st) == BigInt[1, 1]
+        @test sprint(show, st) == "ReductionStats(value_type = Int32, unit_pivots = 2, core = 0×0)"
+    end
+
+    @testset "exported and public names" begin
+        SED = SparseElementaryDivisors
+        for name ∈ (:sparse_elementary_divisors, :ReductionConfig, :ReductionStats, :CoefficientOverflowError,
+                    :read_matrix_market)
+            @test Base.isexported(SED, name)
+        end
+        @static if VERSION >= v"1.11.0-DEV.469"
+            for name ∈ (:DEFAULT_VALUE_TYPES, :ReductionTrace, :RowsData)
+                @test Base.ispublic(SED, name) && !Base.isexported(SED, name)
+            end
+        end
+    end
+
     @testset "Magma (script generation and output parsing)" begin
         rows = [[(1, 2)], [(2, 3), (3, -1)]]
         @test SparseElementaryDivisors._magma_matrix_definition(rows, 2, 3) ==

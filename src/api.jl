@@ -149,9 +149,8 @@ function _rows_data(A::Hecke.ZZMatrix, ::Type{V}) where {V}
 end
 
 """
-    sparse_elementary_divisors(A; value_type = :auto, nworkers = nothing, core_format = :auto,
-                               acceptable_score_threshold = 4, max_buckets_scanned = 1,
-                               verbose = false)
+    sparse_elementary_divisors(A; value_type = :auto, config = ReductionConfig(), stats = nothing,
+                               verbose = false, settings...)
     sparse_elementary_divisors(rows, m, n; kwargs...)
     sparse_elementary_divisors(m, n, rows; kwargs...)
     sparse_elementary_divisors(path::AbstractString; kwargs...)
@@ -161,27 +160,29 @@ Non-zero elementary divisors of the integer matrix `A`, in increasing order: a `
 `A` can be a `SparseMatrixCSC` (fast path), any other `AbstractSparseMatrix` or `AbstractMatrix{<:Integer}` (converted), a Hecke matrix (`Hecke.SMat{ZZRingElem}` or `Hecke.ZZMatrix`), or the matrix given row by row: `rows[r]` is the vector of `(column, value)` pairs of row `r`, with columns in `1:n` and strictly increasing, for an `m × n` matrix (zero values are allowed and ignored; values of any integer type, entries beyond a machine word included). The input is checked before the computation: an `ArgumentError` names the first fault (column out of range, unsorted or repeated column, wrong number of rows); unsorted triplets go through `sparse(I, J, V)`, which sorts them and sums duplicates. With a file name, the matrix is read in Matrix Market format (see [`read_matrix_market`](@ref)).
 
 - `value_type`: integer type(s) of the coefficients during the elimination, with checked arithmetic. `:auto` (default) tries the types of `SparseElementaryDivisors.DEFAULT_VALUE_TYPES` = `(Int32, Int64, Int128, BigInt)` in turn, starting with the first one that holds all the entries, and restarts the computation from the input with the next type after an overflow (each matrix independently: a failed attempt costs its time). A type (`value_type = Int64`) uses that type only; a sequence (`value_type = (Int64, Int128)`) tries its types in turn. Accepted types: signed integers of fixed width (`Int8` to `Int128`, or wider ones such as `Int256` of BitIntegers.jl) in strictly increasing width, and `BigInt` last. When the last type does not suffice, a [`CoefficientOverflowError`](@ref) is raised.
-- `nworkers`: number of parallel tasks (default: `Threads.nthreads()`); start Julia with `-t auto` or `-t N` to use them. The result does not depend on `nworkers`.
-- `core_format`: `:auto`, `:sparse` or `:dense`, format of the core passed to Hecke.
-- `acceptable_score_threshold`, `max_buckets_scanned`: parameters of the pivot search.
+- `config`: the settings of the reduction, a [`ReductionConfig`](@ref) (pivot search, parallelism, format of the core, memory); the same for all the attempts of the widening.
+- `settings...`: any field of `ReductionConfig` given directly as a keyword, which takes precedence over `config`. The most common: `nworkers` (number of parallel tasks, default `Threads.nthreads()`; start Julia with `-t auto` or `-t N`; the result does not depend on it) and `core_format` (`:auto`, `:sparse` or `:dense`, format of the core passed to Hecke). An unknown keyword raises an `ArgumentError`.
+- `stats`: a [`ReductionStats`](@ref), reset then filled in place: type retained, failed attempts, counters, times and core.
 - `verbose`: print the attempts that overflowed, the type retained, and the size and format of the core.
+
+Developer tools: `trace`, a `SparseElementaryDivisors.ReductionTrace` (trajectory fingerprint of the attempt retained), and `probe`, a function of no argument called after each Markowitz pivot.
 """
 function sparse_elementary_divisors(rows::RowsData{<:Integer}, m::Int, n::Int;
                                     value_type = :auto,
-                                    nworkers::Union{Nothing,Integer} = nothing,
-                                    core_format::Symbol = :auto,
-                                    acceptable_score_threshold::Int = 4,
-                                    max_buckets_scanned::Int = 1,
-                                    verbose::Bool = false)
+                                    config::ReductionConfig = ReductionConfig(),
+                                    stats::Union{Nothing, ReductionStats} = nothing,
+                                    trace::Union{Nothing, ReductionTrace} = nothing,
+                                    probe = nothing,
+                                    verbose::Bool = false,
+                                    settings...)
+    stats === nothing || _reset!(stats)
     types = _value_types(value_type)
+    cfg = _with_settings(config, settings)
     ext = _check_rows(rows, m, n)
     first_type = findfirst(T -> _fits(T, ext), types)
     first_type === nothing && throw(_input_overflow(last(types), ext))
-    # The configuration is built at run time (not at precompilation time): the default `nworkers`
-    # depends on `Threads.nthreads()` of the current session.
-    config = nworkers === nothing ? ReductionConfig() : ReductionConfig(; nworkers = Int(nworkers))
-    d = _reduce_and_divisors_widening(rows, m, n, types[first_type:end]; config, core_format,
-                                      acceptable_score_threshold, max_buckets_scanned, verbose)
+    d = _reduce_and_divisors_widening(rows, m, n, types[first_type:end]; config = cfg, trace, stats,
+                                      probe, verbose)
     return BigInt.(d)
 end
 
