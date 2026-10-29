@@ -20,6 +20,8 @@ jobs:
       contents: read
     env:
       JULIA_NUM_THREADS: 4   # exercise the parallel code paths
+      # Coverage on one task only: it makes the tests about 30 times slower.
+      COVERAGE: ${{ matrix.os == 'ubuntu-latest' && matrix.version == '1' }}
     strategy:
       fail-fast: false
       matrix:
@@ -29,6 +31,7 @@ jobs:
         os:
           - ubuntu-latest
           - windows-latest
+          - macos-latest   # Apple silicon
     steps:
       - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3
@@ -37,9 +40,18 @@ jobs:
       - uses: julia-actions/cache@v3
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
+        with:
+          coverage: ${{ env.COVERAGE }}
       - uses: julia-actions/julia-processcoverage@v1
+        if: env.COVERAGE == 'true'
       - uses: codecov/codecov-action@v7
+        if: env.COVERAGE == 'true'
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
+      - uses: actions/upload-artifact@v7   # lcov.info, for the coverage surveys
+        if: env.COVERAGE == 'true'
+        with:
+          name: lcov
+          path: lcov.info

@@ -33,6 +33,15 @@ A = sparse([2 0 0; 0 3 0; 0 0 0])
 sparse_elementary_divisors(A)                 # BigInt[1, 6]  (the non-zero elementary divisors)
 
 sparse_elementary_divisors("matrix.mtx")      # a Matrix Market file
+
+st = ReductionStats()
+sparse_elementary_divisors(A; nworkers = 4, stats = st)
+st.value_type                                  # Int32, the integer type retained
+
+cfg = ReductionConfig(core_format = :sparse)   # settings kept and reused
+sparse_elementary_divisors(A; config = cfg)
+
+write_matrix_market("A.mtx", A; comment = "a small example")
 ```
 
 Start Julia with several threads to benefit from the parallel steps: `julia -t auto`.
@@ -40,17 +49,23 @@ Start Julia with several threads to benefit from the parallel steps: `julia -t a
 Accepted inputs:
 - `SparseMatrixCSC` (fast path), any other `AbstractSparseMatrix` or `AbstractMatrix{<:Integer}` (converted; dense matrices, adjoints and views work but are not efficient);
 - Hecke matrices: `Hecke.SMat{ZZRingElem}` and `Hecke.ZZMatrix`;
-- the matrix given row by row, `rows[r] = [(column, value), ...]` (sorted by column), together with its size: `sparse_elementary_divisors(rows, m, n)` or `sparse_elementary_divisors(m, n, rows)`;
-- a file name: the matrix is read in the [Matrix Market](https://math.nist.gov/MatrixMarket/formats.html) format (`coordinate` or `array`, `integer` or `pattern`, `general`, `symmetric` or `skew-symmetric`) by `read_matrix_market`, which can also be called directly.
+- the matrix given row by row, `rows[r] = [(column, value), ...]` (columns strictly increasing; checked, with an `ArgumentError` naming the first fault), together with its size: `sparse_elementary_divisors(rows, m, n)` or `sparse_elementary_divisors(m, n, rows)`;
+- a file name: the matrix is read in the [Matrix Market](https://math.nist.gov/MatrixMarket/formats.html) format (`coordinate` or `array`, `integer` or `pattern`, `general`, `symmetric` or `skew-symmetric`) by `read_matrix_market`, which can also be called directly; `write_matrix_market` writes a matrix in the `coordinate integer general` format, entries sorted by row then column.
 
-Main options:
+Entries of any integer type are accepted, including entries beyond a machine word (`BigInt`, `ZZRingElem`).
+
+Main options (keywords of `sparse_elementary_divisors`):
 
 | keyword | meaning |
 |---|---|
-| `value_type = Int32` | integer type used during the elimination; an arithmetic overflow raises an explicit error, in which case retry with `Int64`, `Int128` or `BigInt` |
+| `value_type = :auto` | integer type(s) of the coefficients, with checked arithmetic: `:auto` tries `Int32`, `Int64`, `Int128`, `BigInt` in turn (from the first one that holds the entries), restarting from the input after an overflow; a type (`Int64`) or a sequence (`(Int64, Int128)`) restricts the choice, and a `CoefficientOverflowError` is raised if the last type does not suffice |
 | `nworkers` | number of parallel tasks (default: `Threads.nthreads()`; lower it if the machine is shared, or for tiny matrices) |
 | `core_format = :auto` | format of the core passed to Hecke: `:sparse`, `:dense` or `:auto` |
-| `verbose = false` | print the size and format of the core |
+| `config = ReductionConfig()` | all the settings of the reduction (pivot search, parallelism, format of the core, memory), with their defaults; see `?ReductionConfig`. Each field can also be given directly as a keyword, like `nworkers` and `core_format` above, and then takes precedence over `config` |
+| `stats = nothing` | a `ReductionStats()`, filled in place: type retained, attempts that overflowed, unit pivots, times of the phases, size and format of the core; see `?ReductionStats` |
+| `verbose = false` | print the attempts that overflowed, the type retained, and the size and format of the core |
+
+Exported names: `sparse_elementary_divisors`, `ReductionConfig`, `ReductionStats`, `CoefficientOverflowError`, `read_matrix_market`, `write_matrix_market`, `magma_elementary_divisors`, `timed_magma_elementary_divisors`.
 
 ## Comparison with Magma
 
@@ -68,7 +83,7 @@ Times for the complete computation of the elementary divisors (for SparseElement
 - SparseElementaryDivisors: Intel Core Ultra 9 285 vPro, 128 GB;
 - Magma (with Magma's own timing of `ElementaryDivisors`): Intel Xeon Gold 5222, 64 GB.
 
-The times are only indicative: the test matrices are not distributed with the package (this may change), and the machines are not exactly comparable. The matrices are differentials of a reduced version of Dehornoy–Lafont's resolution for the dual braid monoid of the complex reflection group G₃₇, produced by [Gauss.jl](https://plmlab.math.cnrs.fr/guiraud/gauss.jl), and a family ZT2w4m5 of examples provided by Najib Idrissi (see Acknowledgements).
+The times are only indicative: the test matrices are not distributed with the package (this may change), and the machines are not exactly comparable. The matrices are differentials of a reduced version of Dehornoy–Lafont's resolution (see References) for the dual braid monoid of the complex reflection group G₃₇, produced by [Gauss.jl](https://github.com/yvesguiraud/Gauss.jl), and a family ZT2w4m5 of examples provided by Najib Idrissi (see Acknowledgements).
 
 | Matrix | Size | Hecke | SparseElementaryDivisors | Magma |
 |---|---|---|---|---|
@@ -81,6 +96,29 @@ The times are only indicative: the test matrices are not distributed with the pa
 | ZT2w4m5 d₄ | 562046 × 1776117 | — | 6 min 34 s | 24 min 30 s |
 
 Notes: the SparseElementaryDivisors times are medians of 3 to 5 runs (2 runs for ZT2w4m5 d₄) of the whole computation, using all 24 threads (`nworkers = Threads.nthreads()`). The final step on the core by Hecke takes less than 0.4 s in all cases except ZT2w4m5 d₄, where it takes about 19 s (the core has size 9351 × 25417 and is dense).
+
+## References
+
+Methods:
+- H. M. Markowitz, *The Elimination Form of the Inverse and its Application to Linear Programming*, Management Science 3(3) (1957), 255–269, [doi:10.1287/mnsc.3.3.255](https://doi.org/10.1287/mnsc.3.3.255). The Markowitz score (r − 1)(c − 1) that orders the search of the unit pivots.
+- B. A. LaMacchia, A. M. Odlyzko, *Solving Large Sparse Linear Systems Over Finite Fields*, in A. J. Menezes, S. A. Vanstone (eds.), Advances in Cryptology – CRYPTO '90, Lecture Notes in Computer Science 537, Springer (1991), 109–133, [doi:10.1007/3-540-38424-3_8](https://doi.org/10.1007/3-540-38424-3_8). Structured elimination, here of the rows and columns of degree one with a unit entry, before and between the Markowitz pivots.
+- J.-G. Dumas, B. D. Saunders, G. Villard, *On Efficient Sparse Integer Matrix Smith Normal Form Computations*, Journal of Symbolic Computation 32(1–2) (2001), 71–99, [doi:10.1006/jsco.2001.0451](https://doi.org/10.1006/jsco.2001.0451). Smith normal form of large sparse integer matrices, in particular from homology.
+- J.-G. Dumas, F. Heckenbach, B. D. Saunders, V. Welker, *Computing Simplicial Homology Based on Efficient Smith Normal Form Algorithms*, in M. Joswig, N. Takayama (eds.), Algebra, Geometry and Software Systems, Springer (2003), 177–206, [doi:10.1007/978-3-662-05148-1_10](https://doi.org/10.1007/978-3-662-05148-1_10). Review and comparison of Smith normal form algorithms on sparse boundary matrices.
+
+Software used:
+- C. Fieker, W. Hart, T. Hofmann, F. Johansson, *Nemo/Hecke: Computer Algebra and Number Theory Packages for the Julia Programming Language*, in Proceedings of ISSAC '17, ACM (2017), 157–164, [doi:10.1145/3087604.3087611](https://doi.org/10.1145/3087604.3087611). Hecke computes the elementary divisors of the core.
+- The FLINT team, *FLINT: Fast Library for Number Theory* (2025), [flintlib.org](https://flintlib.org). The integer arithmetic of the core, through Nemo.
+
+Comparison with Magma:
+- W. Bosma, J. Cannon, C. Playoust, *The Magma Algebra System I: The User Language*, Journal of Symbolic Computation 24(3–4) (1997), 235–265, [doi:10.1006/jsco.1996.0125](https://doi.org/10.1006/jsco.1996.0125).
+
+File format:
+- R. F. Boisvert, R. Pozo, K. A. Remington, *The Matrix Market Exchange Formats: Initial Design*, NIST IR 5935, National Institute of Standards and Technology (1996), [doi:10.6028/NIST.IR.5935](https://doi.org/10.6028/NIST.IR.5935). The format of `read_matrix_market` and `write_matrix_market`.
+
+Matrices of the benchmarks:
+- P. Dehornoy, Y. Lafont, *Homology of Gaussian Groups*, Annales de l'Institut Fourier 53(2) (2003), 489–540, [doi:10.5802/aif.1951](https://doi.org/10.5802/aif.1951). The resolution whose reduced version, computed by Gauss.jl, gives the G₃₇ matrices.
+
+To cite SparseElementaryDivisors.jl itself, see [CITATION.cff](CITATION.cff) (or "Cite this repository" on the GitHub page).
 
 ## Development
 

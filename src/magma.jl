@@ -1,8 +1,8 @@
 # magma.jl — comparison with Magma (optional: requires a Magma installation, local or through SSH).
 
 # Magma's "flat" sparse format: for each row, the number of non-zero entries followed by the (column, value) pairs.
-function _magma_matrix_definition(rows::RowsData, m::Int, n::Int)
-    Q = Int[]
+function _magma_matrix_definition(rows::RowsData{V}, m::Int, n::Int) where {V<:Integer}
+    Q = promote_type(Int, V)[]
     for row ∈ rows
         push!(Q, length(row))
         for (c, v) ∈ row
@@ -36,13 +36,13 @@ end
                                     connect_timeout = 15)
     timed_magma_elementary_divisors(rows, m, n; kwargs...)
 
-Compute the elementary divisors of `A` with Magma, to compare results and timings. Return `(divisors::Vector{BigInt}, t_magma::Float64)`, where `t_magma` is the time measured BY MAGMA for the single call to `ElementaryDivisors` (excluding the connection, the start-up of Magma and the transfer of the matrix; `NaN` if it could not be read). `A` can be of any type accepted by [`sparse_elementary_divisors`](@ref), including a Matrix Market file name.
+Compute the elementary divisors of `A` with Magma (Bosma, Cannon and Playoust 1997, references in the README), to compare results and timings. Return `(divisors::Vector{BigInt}, t_magma::Float64)`, where `t_magma` is the time measured BY MAGMA for the single call to `ElementaryDivisors` (excluding the connection, the start-up of Magma and the transfer of the matrix; `NaN` if it could not be read). `A` can be of any type accepted by [`sparse_elementary_divisors`](@ref), including a Matrix Market file name.
 
 Without `ssh_host`, `magma_command` is run locally; otherwise the command is run through `ssh -o ConnectTimeout=… ssh_host magma_command`. The matrix is sent on the standard input.
 
 See [`magma_elementary_divisors`](@ref) for a version returning only the divisors.
 """
-function timed_magma_elementary_divisors(rows::RowsData, m::Int, n::Int;
+function timed_magma_elementary_divisors(rows::RowsData{<:Integer}, m::Int, n::Int;
                                          ssh_host::Union{Nothing,AbstractString} = nothing,
                                          magma_command::AbstractString = "magma -b",
                                          connect_timeout::Int = 15)
@@ -88,7 +88,7 @@ function timed_magma_elementary_divisors(rows::RowsData, m::Int, n::Int;
     return _parse_magma_output(result)
 end
 
-timed_magma_elementary_divisors(m::Int, n::Int, rows::RowsData; kwargs...) =
+timed_magma_elementary_divisors(m::Int, n::Int, rows::RowsData{<:Integer}; kwargs...) =
     timed_magma_elementary_divisors(rows, m, n; kwargs...)
 timed_magma_elementary_divisors(A::SparseMatrixCSC{<:Integer}; kwargs...) =
     timed_magma_elementary_divisors(_rows_data(A), size(A)...; kwargs...)
