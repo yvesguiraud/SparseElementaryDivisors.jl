@@ -166,6 +166,8 @@ Non-zero elementary divisors of the integer matrix `A`, in increasing order: a `
 - `verbose`: print the attempts that overflowed, the type retained, and the size and format of the core.
 
 Developer tools: `trace`, a `SparseElementaryDivisors.ReductionTrace` (trajectory fingerprint of the attempt retained), and `probe`, a function of no argument called after each Markowitz pivot.
+
+Method: a structured elimination (LaMacchia and Odlyzko 1991) pivots on the rows and columns of degree one whose entry is ±1; then each step pivots on a ±1 entry of small Markowitz score (r − 1)(c − 1) (Markowitz 1957), r and c being the numbers of entries of its row and column, and the structured elimination runs again. Each ±1 pivot gives an elementary divisor 1; the core that remains, with no ±1 entry left, goes to `Hecke.elementary_divisors` (Fieker, Hart, Hofmann and Johansson 2017; FLINT). On the Smith normal form of large sparse integer matrices, in particular from homology, see Dumas, Saunders and Villard (2001). References in the README.
 """
 function sparse_elementary_divisors(rows::RowsData{<:Integer}, m::Int, n::Int;
                                     value_type = :auto,

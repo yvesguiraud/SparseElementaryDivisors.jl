@@ -690,8 +690,8 @@ No setting changes the elementary divisors; the pivot search parameters change t
 the pivots (hence the time, the fill-in and the size of the coefficients), the others only how
 the work is done. The values are checked at construction (`ArgumentError`).
 
-Pivot search (±1 pivots, Markowitz score `(row degree - 1)(column degree - 1)`, columns visited
-by increasing degree):
+Pivot search (±1 pivots, Markowitz score `(row degree - 1)(column degree - 1)` after Markowitz
+(1957), columns visited by increasing degree):
 - `acceptable_score_threshold = 4`: the search stops at the first pivot whose score is at
   most this value (`≥ 0`);
 - `max_buckets_scanned = 1`: maximum number of non-empty degree buckets visited by a search

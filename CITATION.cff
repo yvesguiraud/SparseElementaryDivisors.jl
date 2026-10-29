@@ -1,0 +1,48 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "SparseElementaryDivisors.jl"
+abstract: >-
+  Elementary divisors (Smith normal form) of large sparse integer matrices, in Julia:
+  exact sparse elimination with unit pivots (Markowitz-style pivot choice, parallel
+  pivot search and fill-in, checked integer arithmetic), then Hecke on the remaining core.
+authors:
+  - family-names: Guiraud
+    given-names: Yves
+    affiliation: "Université Paris Cité, Sorbonne Université, CNRS, INRIA, IMJ-PRG, F-75013 Paris, France"
+    email: yves.guiraud@imj-prg.fr
+    website: "https://www.imj-prg.fr/~yves.guiraud"
+license: MIT
+repository-code: "https://github.com/yvesguiraud/SparseElementaryDivisors.jl"
+keywords:
+  - Smith normal form
+  - elementary divisors
+  - sparse matrices
+  - integer matrices
+  - homology
+  - Julia
+references:
+  - type: conference-paper
+    title: "Nemo/Hecke: Computer Algebra and Number Theory Packages for the Julia Programming Language"
+    authors:
+      - family-names: Fieker
+        given-names: Claus
+      - family-names: Hart
+        given-names: William
+      - family-names: Hofmann
+        given-names: Tommy
+      - family-names: Johansson
+        given-names: Fredrik
+    collection-title: "Proceedings of the 2017 ACM International Symposium on Symbolic and Algebraic Computation (ISSAC '17)"
+    publisher:
+      name: ACM
+    year: 2017
+    start: 157
+    end: 164
+    doi: 10.1145/3087604.3087611
+  - type: software
+    title: "FLINT: Fast Library for Number Theory"
+    authors:
+      - name: "The FLINT team"
+    year: 2025
+    url: "https://flintlib.org"

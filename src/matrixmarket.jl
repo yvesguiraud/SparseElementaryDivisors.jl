@@ -4,7 +4,7 @@
 """
     read_matrix_market(path_or_io) -> SparseMatrixCSC{Int,Int}
 
-Read a matrix in [Matrix Market](https://math.nist.gov/MatrixMarket/formats.html) format: `coordinate` (the format suited to sparse matrices) or `array`, of type `integer` or `pattern` (all entries equal to 1); `real` is accepted if all values are integers. The symmetry can be `general`, `symmetric` or `skew-symmetric` (the latter two for `coordinate` only). Comment lines (`%`) are ignored. The values are read as `Int`: an entry beyond a machine word raises an error. See also [`write_matrix_market`](@ref).
+Read a matrix in [Matrix Market](https://math.nist.gov/MatrixMarket/formats.html) format (Boisvert, Pozo and Remington 1996, references in the README): `coordinate` (the format suited to sparse matrices) or `array`, of type `integer` or `pattern` (all entries equal to 1); `real` is accepted if all values are integers. The symmetry can be `general`, `symmetric` or `skew-symmetric` (the latter two for `coordinate` only). Comment lines (`%`) are ignored. The values are read as `Int`: an entry beyond a machine word raises an error. See also [`write_matrix_market`](@ref).
 """
 function read_matrix_market(io::IO)
     header = readline(io)
@@ -83,7 +83,7 @@ read_matrix_market(path::AbstractString) = open(read_matrix_market, path)
 
 Write the integer matrix `A` (a `SparseMatrixCSC{<:Integer}`, or any `AbstractMatrix{<:Integer}`,
 converted by `sparse`) in [Matrix Market](https://math.nist.gov/MatrixMarket/formats.html)
-format, `coordinate integer general`: the header line, the comment lines, the line `m n nnz`,
+format (Boisvert, Pozo and Remington 1996), `coordinate integer general`: the header line, the comment lines, the line `m n nnz`,
 then one line `i j v` per nonzero entry, sorted by row, then by column. The stored zeros are
 left out (`nnz` counts the entries written); the values are written in decimal, whatever their
 integer type (`BigInt` included); the lines end with `\\n` on every system. The same matrix
