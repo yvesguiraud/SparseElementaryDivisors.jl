@@ -20,13 +20,15 @@ mutable struct DegreeBuckets
     pos_in_bucket::Vector{Int}     # current position of each index in its current bucket
     bucket_of::Vector{Int}         # (1-based) index of the current bucket of each entity
     max_deg::Int
+    low::Int                       # cursor (P5): the buckets of the degrees d with 2 ≤ d < low are
+                                   # empty; lowered by _bucket_insert!, raised by the pivot search
 end
 
 function DegreeBuckets(n::Int, initial_degrees::Vector{Int}, max_deg::Int)
     buckets = [Int[] for _ ∈ 1:(max_deg + 2)]
     pos_in_bucket = zeros(Int, n)
     bucket_of = zeros(Int, n)
-    db = DegreeBuckets(buckets, pos_in_bucket, bucket_of, max_deg)
+    db = DegreeBuckets(buckets, pos_in_bucket, bucket_of, max_deg, 2)
     for i ∈ 1:n
         bidx = degree_to_bucket_idx(db, initial_degrees[i])
         bucket = db.buckets[bidx]
@@ -40,12 +42,15 @@ end
 @inline degree_to_bucket_idx(db::DegreeBuckets, d::Int)::Int =
     d <= db.max_deg ? d + 1 : db.max_deg + 2
 
+# The only way, besides the constructor (where `low = 2` holds trivially), for an index to
+# enter a bucket: keeps the invariant of `low`.
 function _bucket_insert!(db::DegreeBuckets, i::Int, d::Int)
     bidx = degree_to_bucket_idx(db, d)
     bucket = db.buckets[bidx]
     push!(bucket, i)
     db.pos_in_bucket[i] = length(bucket)
     db.bucket_of[i] = bidx
+    2 <= d < db.low && (db.low = d)
     return nothing
 end
 
@@ -103,7 +108,7 @@ function UnitColumnIndex(col_rows::Vector{Vector{Int}}, col_vals::Vector{Vector{
     buckets = [Int[] for _ ∈ 1:(max_deg + 2)]
     pos_in_bucket = zeros(Int, n)
     bucket_of = zeros(Int, n)
-    db = DegreeBuckets(buckets, pos_in_bucket, bucket_of, max_deg)
+    db = DegreeBuckets(buckets, pos_in_bucket, bucket_of, max_deg, 2)
     for c ∈ 1:n
         cnt = 0
         @inbounds for v ∈ col_vals[c]
@@ -165,15 +170,27 @@ struct DualSparseMatrix{T<:Integer}
     unit_index::UnitColumnIndex        # index of the columns with a ±1 entry
 end
 
-"""
-    DualSparseMatrix(rows_data, m, n; max_tracked_degree = 10000, value_type::Type{T} = Int32)
+# Degrees above this bound share the overflow bucket.
+const _MAX_TRACKED_DEGREE = 10_000
 
-Build the matrix in linear time from the vector of `(j, v)` pairs of each row, already sorted by increasing row and column number. `value_type` sets the storage type of the coefficients (`T = Int32` by default).
+# Largest degree with its own bucket (P5): a row has at most n entries and a column at most m,
+# so that with max(m, n) no entity reaches the overflow bucket, as with the bound 10 000 when
+# max(m, n) ≤ 10 000 (the buckets beyond max(m, n) were always empty): same trajectory, bit for
+# bit. At least 1, so that the bucket of degree 1 (structured elimination) is never the overflow
+# bucket.
+_max_tracked_degree(m::Int, n::Int) = clamp(max(m, n), 1, _MAX_TRACKED_DEGREE)
+
+"""
+    DualSparseMatrix(rows_data, m, n; max_tracked_degree = _max_tracked_degree(m, n),
+                     value_type::Type{T} = Int32)
+
+Build the matrix in linear time from the vector of `(j, v)` pairs of each row, already sorted by increasing row and column number. `value_type` sets the storage type of the coefficients (`T = Int32` by default). `max_tracked_degree`: largest degree with its own bucket, `clamp(max(m, n), 1, 10_000)` by default.
 
 Precondition, not checked here (the loop writes with `@inbounds` and the merges assume it): `length(rows_data) == m`, in each row columns in `1:n` and strictly increasing, and values that fit in `T`. The public entry point checks the first two once with `_check_rows` and chooses `T` accordingly; the conversions `_rows_data` produce such rows.
 """
 function DualSparseMatrix(rows_data::RowsData{<:Integer}, m::Int, n::Int;
-                            max_tracked_degree::Int = 10000, value_type::Type{T} = Int32) where {T}
+                            max_tracked_degree::Int = _max_tracked_degree(m, n),
+                            value_type::Type{T} = Int32) where {T}
     row_cols = [Int[] for _ ∈ 1:m]
     row_vals = [T[] for _ ∈ 1:m]
     col_rows = [Int[] for _ ∈ 1:n]
@@ -1170,7 +1187,16 @@ function _search_pivot!(M::DualSparseMatrix{T}, wsp::ReductionWorkspace{T}, cfg:
     max_deg::Int = M.col_buckets.max_deg
     unit_buckets::DegreeBuckets = M.unit_index.buckets
 
-    for target_deg::Int ∈ 2:max_deg
+    # Cursor (P5): the buckets of the degrees 2 to low - 1 are empty; skip the empty ones that
+    # follow, and keep the position for the next search. The non-empty buckets visited are
+    # those of the full loop, in the same order: same pivot.
+    first_deg::Int = unit_buckets.low
+    @inbounds while first_deg <= max_deg && isempty(unit_buckets.buckets[first_deg + 1])
+        first_deg += 1
+    end
+    unit_buckets.low = first_deg
+
+    for target_deg::Int ∈ first_deg:max_deg
         bidx::Int = degree_to_bucket_idx(unit_buckets, target_deg)
         bucket = unit_buckets.buckets[bidx]
         isempty(bucket) && continue

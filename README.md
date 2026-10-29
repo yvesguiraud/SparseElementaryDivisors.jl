@@ -33,6 +33,15 @@ A = sparse([2 0 0; 0 3 0; 0 0 0])
 sparse_elementary_divisors(A)                 # BigInt[1, 6]  (the non-zero elementary divisors)
 
 sparse_elementary_divisors("matrix.mtx")      # a Matrix Market file
+
+st = ReductionStats()
+sparse_elementary_divisors(A; nworkers = 4, stats = st)
+st.value_type                                  # Int32, the integer type retained
+
+cfg = ReductionConfig(core_format = :sparse)   # settings kept and reused
+sparse_elementary_divisors(A; config = cfg)
+
+write_matrix_market("A.mtx", A; comment = "a small example")
 ```
 
 Start Julia with several threads to benefit from the parallel steps: `julia -t auto`.
@@ -41,18 +50,22 @@ Accepted inputs:
 - `SparseMatrixCSC` (fast path), any other `AbstractSparseMatrix` or `AbstractMatrix{<:Integer}` (converted; dense matrices, adjoints and views work but are not efficient);
 - Hecke matrices: `Hecke.SMat{ZZRingElem}` and `Hecke.ZZMatrix`;
 - the matrix given row by row, `rows[r] = [(column, value), ...]` (columns strictly increasing; checked, with an `ArgumentError` naming the first fault), together with its size: `sparse_elementary_divisors(rows, m, n)` or `sparse_elementary_divisors(m, n, rows)`;
-- a file name: the matrix is read in the [Matrix Market](https://math.nist.gov/MatrixMarket/formats.html) format (`coordinate` or `array`, `integer` or `pattern`, `general`, `symmetric` or `skew-symmetric`) by `read_matrix_market`, which can also be called directly.
+- a file name: the matrix is read in the [Matrix Market](https://math.nist.gov/MatrixMarket/formats.html) format (`coordinate` or `array`, `integer` or `pattern`, `general`, `symmetric` or `skew-symmetric`) by `read_matrix_market`, which can also be called directly; `write_matrix_market` writes a matrix in the `coordinate integer general` format, entries sorted by row then column.
 
 Entries of any integer type are accepted, including entries beyond a machine word (`BigInt`, `ZZRingElem`).
 
-Main options:
+Main options (keywords of `sparse_elementary_divisors`):
 
 | keyword | meaning |
 |---|---|
 | `value_type = :auto` | integer type(s) of the coefficients, with checked arithmetic: `:auto` tries `Int32`, `Int64`, `Int128`, `BigInt` in turn (from the first one that holds the entries), restarting from the input after an overflow; a type (`Int64`) or a sequence (`(Int64, Int128)`) restricts the choice, and a `CoefficientOverflowError` is raised if the last type does not suffice |
 | `nworkers` | number of parallel tasks (default: `Threads.nthreads()`; lower it if the machine is shared, or for tiny matrices) |
 | `core_format = :auto` | format of the core passed to Hecke: `:sparse`, `:dense` or `:auto` |
+| `config = ReductionConfig()` | all the settings of the reduction (pivot search, parallelism, format of the core, memory), with their defaults; see `?ReductionConfig`. Each field can also be given directly as a keyword, like `nworkers` and `core_format` above, and then takes precedence over `config` |
+| `stats = nothing` | a `ReductionStats()`, filled in place: type retained, attempts that overflowed, unit pivots, times of the phases, size and format of the core; see `?ReductionStats` |
 | `verbose = false` | print the attempts that overflowed, the type retained, and the size and format of the core |
+
+Exported names: `sparse_elementary_divisors`, `ReductionConfig`, `ReductionStats`, `CoefficientOverflowError`, `read_matrix_market`, `write_matrix_market`, `magma_elementary_divisors`, `timed_magma_elementary_divisors`.
 
 ## Comparison with Magma
 

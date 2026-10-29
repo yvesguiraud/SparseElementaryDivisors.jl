@@ -148,7 +148,7 @@ end
         ref = reference(A)
         coord = IOBuffer()
         println(coord, "%%MatrixMarket matrix coordinate integer general")
-        println(coord, "% un commentaire")
+        println(coord, "% a comment")
         I, J, V = findnz(sparse(A))
         println(coord, "30 35 ", length(V))
         for k ∈ eachindex(V)
@@ -165,7 +165,66 @@ end
         # array format, column by column
         io = IOBuffer("%%MatrixMarket matrix array integer general\n2 3\n1\n0\n0\n4\n5\n0\n")
         @test read_matrix_market(io) == sparse([1 0 5; 0 4 0])
-        @test_throws ArgumentError read_matrix_market(IOBuffer("pas un fichier Matrix Market\n"))
+        @test_throws ArgumentError read_matrix_market(IOBuffer("not a Matrix Market file\n"))
+    end
+
+    @testset "Matrix Market writing" begin
+        header = "%%MatrixMarket matrix coordinate integer general\n"
+        # the 24 files of test/data, read then written with their comment: the same bytes
+        data = joinpath(@__DIR__, "data")
+        files = sort!(filter(endswith(".mtx"), readdir(data)))
+        @test length(files) == 24
+        for f ∈ files
+            bytes = read(joinpath(data, f))
+            comment = [l[3:end] for l ∈ split(String(copy(bytes)), '\n') if startswith(l, "% ")]
+            io = IOBuffer()
+            write_matrix_market(io, read_matrix_market(joinpath(data, f)); comment)
+            @test take!(io) == bytes
+        end
+        # dense input, by path, comment of two lines; read back
+        A = random_matrix(30, 35, 0.15; seed = 13)
+        path = tempname() * ".mtx"
+        @test write_matrix_market(path, A; comment = "first line\nsecond line\n") === nothing
+        @test read_matrix_market(path) == sparse(A)
+        text = read(path, String)
+        @test startswith(text, header * "% first line\n% second line\n30 35 $(count(!iszero, A))\n")
+        @test endswith(text, "\n") && !occursin('\r', text)
+        rm(path)
+        # stored zero left out, entries by row then column, vector of comments
+        S = SparseMatrixCSC(2, 2, [1, 3, 4], [1, 2, 1], [-3, 0, 5])
+        @test sprint(write_matrix_market, S) == header * "2 2 2\n1 1 -3\n1 2 5\n"
+        @test sprint(io -> write_matrix_market(io, S; comment = ["a", "b\r\nc"])) ==
+              header * "% a\n% b\n% c\n2 2 2\n1 1 -3\n1 2 5\n"
+        # no entry; values beyond a machine word; Bool
+        E = spzeros(Int, 3, 0)
+        @test sprint(write_matrix_market, E) == header * "3 0 0\n"
+        @test read_matrix_market(IOBuffer(sprint(write_matrix_market, E))) == E
+        @test sprint(write_matrix_market, sparse([big(2)^70 0; 0 -1])) ==
+              header * "2 2 2\n1 1 1180591620717411303424\n2 2 -1\n"
+        @test sprint(write_matrix_market, sparse([true false; false true])) == header * "2 2 2\n1 1 1\n2 2 1\n"
+        @test_throws ArgumentError write_matrix_market(IOBuffer(), S; comment = 3)
+    end
+
+    @testset "degree buckets" begin
+        SED = SparseElementaryDivisors
+        # largest degree with its own bucket: clamp(max(m, n), 1, 10_000)
+        for (m, n, expected) ∈ ((1, 56, 56), (0, 0, 1), (1, 10_001, 10_000), (300, 200, 300))
+            rows = [Tuple{Int,Int}[] for _ ∈ 1:m]
+            M = SED.DualSparseMatrix(rows, m, n; value_type = Int64)
+            @test M.row_buckets.max_deg == M.col_buckets.max_deg == M.unit_index.buckets.max_deg == expected
+            @test length(M.unit_index.buckets.buckets) == expected + 2
+            @test SED.check_structure_consistency(M)
+        end
+        # the cursor low and the rest of the structure stay consistent along a reduction
+        checks = Bool[]
+        for (m, n, dens, seed) ∈ ((60, 80, 0.10, 7), (80, 40, 0.08, 5), (50, 50, 0.20, 3))
+            A = random_matrix(m, n, dens; seed)
+            M = SED.DualSparseMatrix(SED._rows_data(sparse(A)), m, n; value_type = Int64)
+            probe = () -> push!(checks, SED.check_structure_consistency(M))
+            SED.reduce_to_core!(M; probe)
+            @test SED.check_structure_consistency(M)
+        end
+        @test !isempty(checks) && all(checks)
     end
 
     @testset "explicit overflow" begin

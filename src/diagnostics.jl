@@ -47,6 +47,19 @@ function _check_buckets(db::DegreeBuckets, degrees::Vector{Int}, tracked::Vector
     return ok
 end
 
+# Invariant of the cursor `low` (P5).
+function _check_low(db::DegreeBuckets, name::String)::Bool
+    ok = 2 <= db.low <= db.max_deg + 1
+    ok || println("[$name] low = $(db.low) outside 2:$(db.max_deg + 1)")
+    for d ∈ 2:min(db.low - 1, db.max_deg)
+        if !isempty(db.buckets[d + 1])
+            println("[$name] the bucket of degree $d is not empty, below low = $(db.low)")
+            ok = false
+        end
+    end
+    return ok
+end
+
 function check_structure_consistency(M::DualSparseMatrix)::Bool
     ok = true
     nnz_rows = 0; nnz_cols = 0
@@ -84,6 +97,9 @@ function check_structure_consistency(M::DualSparseMatrix)::Bool
     ok &= _check_buckets(M.col_buckets, col_deg, fill(true, M.num_cols), "col_buckets")
     tracked = [M.unit_index.unit_count[c] > 0 for c ∈ 1:M.num_cols]
     ok &= _check_buckets(M.unit_index.buckets, col_deg, tracked, "unit_index")
+    ok &= _check_low(M.row_buckets, "row_buckets")
+    ok &= _check_low(M.col_buckets, "col_buckets")
+    ok &= _check_low(M.unit_index.buckets, "unit_index")
     ok &= check_unit_index_consistency(M)
     return ok
 end
