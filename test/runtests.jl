@@ -41,6 +41,14 @@ function random_rows_data(m, n, density; p_unit = 0.6, max_abs = 5, seed = 1)
     return rows
 end
 
+# A sparse matrix type other than SparseMatrixCSC (as other packages define), for the
+# conversion path of sparse_elementary_divisors.
+struct WrappedSparse <: AbstractSparseMatrix{Int, Int}
+    A::SparseMatrixCSC{Int, Int}
+end
+Base.size(W::WrappedSparse) = size(W.A)
+Base.getindex(W::WrappedSparse, i::Int, j::Int) = W.A[i, j]
+
 const NW = min(4, Threads.nthreads())
 const sed = sparse_elementary_divisors
 
@@ -83,6 +91,7 @@ end
             @test sed(sparse(A); value_type = Int64) == ref
             @test sed(sparse(A); value_type = Int64, nworkers = 1) == ref
             @test sed(sparse(A); value_type = Int64, nworkers = NW) == ref
+            @test sed(sparse(A); value_type = BigInt) == ref
         end
     end
 
@@ -106,6 +115,7 @@ end
         @test sed(A; value_type = Int64) == ref                                   # dense
         @test sed(A'; value_type = Int64) == reference(Matrix(A'))                # Adjoint
         @test sed(view(sparse(A), 1:30, 1:40); value_type = Int64) == reference(A[1:30, 1:40])
+        @test sed(WrappedSparse(sparse(A)); value_type = Int64) == ref            # other sparse type
         S = Hecke.sparse_matrix(Hecke.ZZ)                                         # SMat de Hecke
         for r ∈ 1:40
             push!(S, Hecke.sparse_row(Hecke.ZZ, [(c, Hecke.ZZ(A[r, c])) for c ∈ 1:50 if A[r, c] != 0]))
@@ -166,6 +176,13 @@ end
         io = IOBuffer("%%MatrixMarket matrix array integer general\n2 3\n1\n0\n0\n4\n5\n0\n")
         @test read_matrix_market(io) == sparse([1 0 5; 0 4 0])
         @test_throws ArgumentError read_matrix_market(IOBuffer("not a Matrix Market file\n"))
+        # real field: integer values only
+        io = IOBuffer("%%MatrixMarket matrix coordinate real general\n2 2 2\n1 1 2.0\n2 2 -3\n")
+        @test read_matrix_market(io) == sparse([2 0; 0 -3])
+        io = IOBuffer("%%MatrixMarket matrix coordinate real general\n2 2 1\n1 1 2.5\n")
+        @test throws_argument_error(() -> read_matrix_market(io), "non-integer value \"2.5\"")
+        io = IOBuffer("%%MatrixMarket matrix vector integer general\n2 2\n")
+        @test throws_argument_error(() -> read_matrix_market(io), "unsupported format \"vector\"")
     end
 
     @testset "Matrix Market writing" begin
@@ -225,6 +242,84 @@ end
             @test SED.check_structure_consistency(M)
         end
         @test !isempty(checks) && all(checks)
+    end
+
+    @testset "internals" begin
+        SED = SparseElementaryDivisors
+        A = random_matrix(60, 80, 0.10; seed = 7)
+        ref = reference(A)
+        rows = SED._rows_data(sparse(A))
+        # overflow bucket: with max_tracked_degree = 3, the degrees above 3 share it
+        M = SED.DualSparseMatrix(rows, 60, 80; value_type = Int64, max_tracked_degree = 3)
+        @test SED._reduce_and_divisors!(M) == ref
+        @test SED.check_structure_consistency(M)
+        # display of the trajectory fingerprint
+        tr = SED.ReductionTrace()
+        sed(sparse(A); trace = tr)
+        @test startswith(sprint(show, tr), "ReductionTrace(h=0x") && occursin("pivots=$(tr.n_pivots)", sprint(show, tr))
+        # sparse extraction of an empty core
+        M = SED.DualSparseMatrix(SED._rows_data(sparse([1 0; 0 1])), 2, 2; value_type = Int64)
+        @test SED.reduce_to_core!(M) == 2
+        @test Hecke.nrows(SED.extract_core_smat(M)) == 0
+        # unwrapping of a TaskFailedException
+        t = Threads.@spawn error("inner failure")
+        e = caught(() -> wait(t))
+        @test e isa TaskFailedException
+        @test SED._unwrap_task_failure(e) isa ErrorException
+    end
+
+    @testset "diagnostics" begin
+        SED = SparseElementaryDivisors
+        A = random_matrix(40, 50, 0.12; seed = 11)
+        ref = reference(A)
+        rows = SED._rows_data(sparse(A))
+        quiet(f) = redirect_stdout(f, devnull)
+        # at each step, the diagnostic search (full loop over the buckets) finds the pivot of
+        # the search of the reduction (cursor of P5), overflow bucket included
+        for cfg ∈ (ReductionConfig(nworkers = 1), ReductionConfig(nworkers = 1, max_buckets_scanned = 3)),
+            mtd ∈ (SED._max_tracked_degree(40, 50), 3)
+            M = SED.DualSparseMatrix(rows, 40, 50; value_type = Int64, max_tracked_degree = mtd)
+            wsp = SED.ReductionWorkspace{Int64}(cfg)
+            same = true
+            steps = 0
+            while true
+                SED.eliminate_structured!(M)
+                d = SED.diagnostic_pivot_search(M; config = cfg)
+                p_r, p_c, score = SED._search_pivot!(M, wsp, cfg, 1, nothing)
+                same &= (d.p_r, d.p_c, d.best_score) == (p_r, p_c, score)
+                d.found || break
+                SED.markowitz_pivot!(M; config = cfg, workspace = wsp) || break
+                steps += 1
+            end
+            @test same && steps > 0
+            @test SED.check_structure_consistency(M)
+        end
+        # cost of the searches, its summary, sweep of two settings (printed output discarded)
+        M = SED.DualSparseMatrix(rows, 40, 50; value_type = Int64)
+        diag = SED.diagnose_pivot_search_cost(deepcopy(M))
+        @test !isempty(diag)
+        totals = quiet(() -> SED.summarize_pivot_search_diag(diag; top_k = 3))
+        @test totals.n_total == length(diag)
+        results = quiet(() -> SED.sweep_search_params(M, [(4, 1), (0, typemax(Int))]))
+        @test length(results) == 2 && all(r -> r.divisors == ref, results)
+        I2 = SED.DualSparseMatrix(SED._rows_data(sparse([1 0; 0 1])), 2, 2; value_type = Int64)
+        @test only(quiet(() -> SED.sweep_search_params(I2, [(4, 1)]))).divisors == [1, 1]  # empty core
+        # the checks detect a corrupted structure
+        @test SED.check_structure_consistency(M)
+        unit_col = findfirst(c -> M.unit_index.unit_count[c] > 0 && length(M.col_rows[c]) >= 2, 1:50)
+        row = findfirst(r -> !isempty(M.row_cols[r]), 1:40)
+        corruptions = (C -> push!(C.row_vals[row], 1),                                # row lengths
+                       C -> (deleteat!(C.col_rows[unit_col], 1); deleteat!(C.col_vals[unit_col], 1)),
+                       C -> (C.unit_index.unit_count[unit_col] += 1),                  # unit count
+                       C -> (C.unit_index.unit_count[unit_col] = 0),                   # tracked, no unit
+                       C -> SED._bucket_remove!(C.unit_index.buckets, unit_col),       # untracked
+                       C -> (C.row_buckets.pos_in_bucket[row] = 0),                    # position
+                       C -> (C.unit_index.buckets.low = C.unit_index.buckets.max_deg + 1))
+        for corrupt! ∈ corruptions
+            C = deepcopy(M)
+            corrupt!(C)
+            @test !quiet(() -> SED.check_structure_consistency(C))
+        end
     end
 
     @testset "explicit overflow" begin
@@ -412,6 +507,44 @@ end
         @test t == 0.630
         @test_throws ErrorException SparseElementaryDivisors._parse_magma_output(
             "##MAGMA_ERROR_BEGIN##Runtime error##MAGMA_ERROR_END##")
+        # a command that does not exist (the task that writes the script on the standard input
+        # warns of the broken pipe: silenced, the logger is inherited by that task)
+        Base.CoreLogging.with_logger(Base.CoreLogging.NullLogger()) do
+            @test_throws ErrorException timed_magma_elementary_divisors(sparse([2 0; 0 3]);
+                                                                        magma_command = "sed-no-such-magma-command")
+        end
+        # a fake Magma (a Julia script with a fixed answer, which checks the matrix it receives
+        # on its standard input), for the whole path: script sent, output read and parsed
+        exe = joinpath(Sys.BINDIR, Base.julia_exename())
+        script = joinpath(mktempdir(), "fake_magma.jl")
+        write(script, """
+            s = read(stdin, String)
+            if occursin("SparseMatrix(2, 2, [ 1, 1, 2, 1, 2, 3 ])", s) && occursin("ElementaryDivisors", s)
+                print("Time: 0.010\\n##DIVS_BEGIN##\\n[ 1, 6 ]\\n##DIVS_END##\\n")
+            else
+                print("##MAGMA_ERROR_BEGIN##unexpected input##MAGMA_ERROR_END##")
+            end
+            """)
+        if occursin(' ', exe) || occursin(' ', script)        # magma_command is split at spaces
+            @info "Fake Magma test skipped: a space in the path of Julia or of the script."
+        else
+            cmd = "$exe --startup-file=no $script"
+            A = [2 0; 0 3]
+            mtx = joinpath(dirname(script), "A.mtx")
+            write_matrix_market(mtx, A)
+            for input ∈ ((sparse(A),), (A,), (Hecke.matrix(Hecke.ZZ, A),), (mtx,),
+                         ([[(1, 2)], [(2, 3)]], 2, 2), (2, 2, [[(1, 2)], [(2, 3)]]))
+                @test timed_magma_elementary_divisors(input...; magma_command = cmd) == (BigInt[1, 6], 0.010)
+            end
+            out = mktemp() do path, io
+                redirect_stdout(io) do
+                    @test magma_elementary_divisors(sparse(A); magma_command = cmd, verbose = true) == BigInt[1, 6]
+                end
+                flush(io)
+                read(path, String)
+            end
+            @test occursin("Magma: ElementaryDivisors computed in 0.01 s", out)
+        end
     end
 end
 

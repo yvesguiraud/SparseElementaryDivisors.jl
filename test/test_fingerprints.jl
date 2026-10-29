@@ -4,8 +4,9 @@
 # v0.1.0 (see data/README.md). For every matrix, the elementary divisors and the
 # trajectory fingerprint (ReductionTrace, through the public entry point) must be
 # identical with the default configuration and with the parallel code paths forced
-# (search_mode = :always, apply_min_work = 0), for 1, 2 and 4 workers, and with
-# release_empty_vectors = true. Matrices that overflowed with a smaller value type are
+# (search_mode = :always, apply_min_work = 0), for 1, 2 and 4 workers, with
+# release_empty_vectors = true, and with the cost rule of search_mode = :auto applied to
+# every bucket (search_parallel_min_work = 0). Matrices that overflowed with a smaller value type are
 # also checked to raise the overflow error with that type, recorded in ReductionStats.
 #
 # Heavy matrices (G37) are skipped unless the environment variable SED_HEAVY_DIR gives
@@ -47,8 +48,9 @@ function fp_check(ref, path)
     vt = FP_VALUE_TYPES[ref["value_type"]]
     forced = (search_mode = :always, apply_min_work = 0)
     released = (release_empty_vectors = true,)
+    cost_rule = (search_parallel_min_work = 0,)       # the cost rule of :auto for every bucket
     for (nw, settings) in ((1, NamedTuple()), (1, forced), (2, forced), (4, forced),
-                           (1, released), (4, merge(forced, released)))
+                           (1, released), (4, merge(forced, released)), (4, cost_rule))
         tr = SED.ReductionTrace()
         st = ReductionStats()
         d = sparse_elementary_divisors(rows, m, n; value_type = vt, nworkers = nw, trace = tr,

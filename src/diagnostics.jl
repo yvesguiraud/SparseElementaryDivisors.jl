@@ -104,17 +104,6 @@ function check_structure_consistency(M::DualSparseMatrix)::Bool
     return ok
 end
 
-"""
-    state_signature(M)
-
-Informative trajectory comparison between two instances.
-"""
-function state_signature(M)
-    return (deepcopy(M.row_cols), deepcopy(M.row_vals), deepcopy(M.col_rows), deepcopy(M.col_vals),
-            deepcopy(M.row_buckets.buckets), deepcopy(M.col_buckets.buckets),
-            deepcopy(M.unit_index.buckets.buckets), copy(M.unit_index.unit_count))
-end
-
 ####################################
 ### Pivot search cost diagnostic ###
 ####################################
@@ -355,9 +344,11 @@ function sweep_search_params(M::DualSparseMatrix, configs::Vector{Tuple{Int,Int}
     ref_divs = results[1].divisors
     for res ∈ results
         if res.divisors != ref_divs
+            # COV_EXCL_START: reached only if two settings give different divisors, a bug
             println("WARNING: results differ for (threshold=$(res.threshold), ",
                     "max_buckets_scanned=$(res.max_buckets_scanned)) — expected $ref_divs, ",
                     "got $(res.divisors)")
+            # COV_EXCL_STOP
         end
     end
     return results

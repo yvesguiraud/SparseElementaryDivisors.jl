@@ -100,7 +100,7 @@ end
 """
     UnitColumnIndex(col_rows, col_vals, n, max_deg)
 
-Initial construction by a full scan (done once, when the matrix is created): all later updates are incremental (see set_entry! and merge_col!).
+Initial construction by a full scan (done once, when the matrix is created): all later updates are incremental (see remove_entry! and merge_col!).
 """
 function UnitColumnIndex(col_rows::Vector{Vector{Int}}, col_vals::Vector{Vector{T}},
                           n::Int, max_deg::Int) where {T}
@@ -227,75 +227,34 @@ function DualSparseMatrix(rows_data::RowsData{<:Integer}, m::Int, n::Int;
     )
 end
 
-function max_active_degree(M::DualSparseMatrix)::Int
-    m1 = maximum(length, M.row_cols; init = 0)
-    m2 = maximum(length, M.col_rows; init = 0)
-    return max(m1, m2)
-end
+########################################
+### Point removal of an entry (SGE) ###
+########################################
 
-#################################################
-### Access and point-update helpers (generic) ###
-#################################################
-
-# Used only by the structured elimination (SGE, below): no arithmetic combining two values, hence no overflow risk here (an entry is removed as is, never recomputed).
-
-@inline function get_entry_in_col(M::DualSparseMatrix{T}, c::Int, r::Int)::T where {T}
-    rows = M.col_rows[c]
-    idx = searchsortedfirst(rows, r)
-    if idx <= length(rows) && rows[idx] == r
-        @inbounds return M.col_vals[c][idx]
-    end
-    return zero(T)
-end
-
-function set_entry!(M::DualSparseMatrix{T}, r::Int, c::Int, new_val::T) where {T}
+# Used only by the structured elimination (below), which removes entries as they are: no
+# arithmetic, hence no overflow risk here. Removes the entry (r, c) if present, on the column
+# side (buckets and unit index updated) then on the row side.
+function remove_entry!(M::DualSparseMatrix{T}, r::Int, c::Int) where {T}
     c_rows = M.col_rows[c]
     c_vals = M.col_vals[c]
     idx_r = searchsortedfirst(c_rows, r)
-    found_c = idx_r <= length(c_rows) && c_rows[idx_r] == r
-    old_val = found_c ? c_vals[idx_r] : zero(T)
-    deg_c_changed = false
-    if iszero(new_val)
-        if found_c
-            deleteat!(c_rows, idx_r)
-            deleteat!(c_vals, idx_r)
-            deg_c_changed = true
-        end
-    elseif found_c
-        @inbounds c_vals[idx_r] = new_val
-    else
-        insert!(c_rows, idx_r, r)
-        insert!(c_vals, idx_r, new_val)
-        deg_c_changed = true
+    if idx_r <= length(c_rows) && c_rows[idx_r] == r
+        was_unit = is_unit(c_vals[idx_r])
+        deleteat!(c_rows, idx_r)
+        deleteat!(c_vals, idx_r)
+        update_degrees!(M.col_buckets, c, length(c_rows))
+        ui = M.unit_index
+        unit_index_sync!(ui, c, ui.unit_count[c] - (was_unit ? 1 : 0), length(c_rows))
     end
-    deg_c_changed && update_degrees!(M.col_buckets, c, length(c_rows))
-
-    ui = M.unit_index
-    was_unit = is_unit(old_val)
-    is_unit_new = is_unit(new_val)
-    new_count = ui.unit_count[c] + (is_unit_new ? 1 : 0) - (was_unit ? 1 : 0)
-    (was_unit != is_unit_new || deg_c_changed) && unit_index_sync!(ui, c, new_count, length(c_rows))
 
     r_cols = M.row_cols[r]
     r_vals = M.row_vals[r]
     idx_c = searchsortedfirst(r_cols, c)
-    found_r = idx_c <= length(r_cols) && r_cols[idx_c] == c
-    deg_r_changed = false
-    if iszero(new_val)
-        if found_r
-            deleteat!(r_cols, idx_c)
-            deleteat!(r_vals, idx_c)
-            deg_r_changed = true
-        end
-    elseif found_r
-        @inbounds r_vals[idx_c] = new_val
-    else
-        insert!(r_cols, idx_c, c)
-        insert!(r_vals, idx_c, new_val)
-        deg_r_changed = true
+    if idx_c <= length(r_cols) && r_cols[idx_c] == c
+        deleteat!(r_cols, idx_c)
+        deleteat!(r_vals, idx_c)
+        update_degrees!(M.row_buckets, r, length(r_cols))
     end
-    deg_r_changed && update_degrees!(M.row_buckets, r, length(r_cols))
-
     return nothing
 end
 
@@ -330,9 +289,9 @@ function eliminate_structured!(M::DualSparseMatrix{T})::Int where {T}
             for i ∈ eachindex(M._sister_rows_buf)
                 @inbounds sc = M._sister_rows_buf[i]
                 sc == c && continue
-                set_entry!(M, r, sc, zero(T))
+                remove_entry!(M, r, sc)
             end
-            set_entry!(M, r, c, zero(T))
+            remove_entry!(M, r, c)
             n_ones += 1
             progress = true
         end
@@ -352,9 +311,9 @@ function eliminate_structured!(M::DualSparseMatrix{T})::Int where {T}
             for i ∈ eachindex(M._sister_rows_buf)
                 @inbounds sr = M._sister_rows_buf[i]
                 sr == r && continue
-                set_entry!(M, sr, c, zero(T))
+                remove_entry!(M, sr, c)
             end
-            set_entry!(M, r, c, zero(T))
+            remove_entry!(M, r, c)
             n_ones += 1
             progress = true
         end
@@ -1591,9 +1550,6 @@ function _reduce_and_divisors!(M::DualSparseMatrix;
     return sort!(divs_final)
 end
 
-# The same on a copy of M.
-_reduce_and_divisors(M::DualSparseMatrix; kwargs...) = _reduce_and_divisors!(deepcopy(M); kwargs...)
-
 # The same from the rows, with the coefficients in value_type.
 function _reduce_and_divisors(rows_data::RowsData{<:Integer}, m::Int, n::Int;
                               value_type::Type = Int32, kwargs...)
@@ -1655,18 +1611,11 @@ function _reduce_and_divisors_widening(rows_data::RowsData{<:Integer}, m::Int, n
     end
 end
 
-# Variant without Hecke (profiling / measuring the Julia part).
-function reduce_without_hecke!(M::DualSparseMatrix; kwargs...)
-    n_ones = reduce_to_core!(M; kwargs...)
-    extract_core_smat(M)
-    return ones(Int, n_ones)
-end
+#############################
+### Dense core extraction ###
+#############################
 
-################################
-### Core extraction variants ###
-################################
-
-# Motivation (ZT2w4m5 d₄): core 9351×25417, nnz = 130 M; extraction to a Hecke `SMat` took 422 s (as long as the whole reduction), i.e. ~3.2 µs/entry versus ~0.25 µs/entry on G₃₇ d₅ (nnz = 2.7 M). Probable cause (not proven): GC pressure (one `ZZRingElem` and one intermediate tuple allocated per entry, pointer vectors to traverse). The variants below avoid these costs; none of them changes the result of the reduction.
+# Motivation (ZT2w4m5 d₄): core 9351×25417, nnz = 130 M; extraction to a Hecke `SMat` took 422 s (as long as the whole reduction), i.e. ~3.2 µs/entry versus ~0.25 µs/entry on G₃₇ d₅ (nnz = 2.7 M). Probable cause (not proven): GC pressure (one `ZZRingElem` and one intermediate tuple allocated per entry, pointer vectors to traverse). The dense extraction below avoids these costs; it does not change the result of the reduction.
 
 # A core coefficient for Flint: an Int when it fits a machine word (no allocation; for a
 # ZZRingElem, Hecke.ZZ(::Int) avoids the BigInt that Hecke.ZZ(::Int32) goes through), a
@@ -1683,37 +1632,6 @@ function _core_index_maps(M::DualSparseMatrix)
         col_inverse[old_idx] = new_idx
     end
     return active_rows, active_cols, col_inverse
-end
-
-"""
-    extract_core_smat_direct(M) -> SMat
-
-Same result as `extract_core_smat` (same active rows, same column numbering), without the intermediate vector of tuples: `pos` and `ZZRingElem` are written directly.
-"""
-function extract_core_smat_direct(M::DualSparseMatrix)
-    active_rows, active_cols, col_inverse = _core_index_maps(M)
-    if isempty(active_rows) || isempty(active_cols)
-        return Hecke.sparse_matrix(Hecke.ZZ)
-    end
-    S = Hecke.sparse_matrix(Hecke.ZZ)
-    for old_r ∈ active_rows
-        cols = M.row_cols[old_r]
-        vals = M.row_vals[old_r]
-        pos = Vector{Int}(undef, length(cols))
-        zv = Vector{Hecke.ZZRingElem}(undef, length(cols))
-        k = 0
-        @inbounds for idx ∈ eachindex(cols)
-            new_c = col_inverse[cols[idx]]
-            if new_c > 0
-                k += 1
-                pos[k] = new_c
-                zv[k] = Hecke.ZZ(_to_zz(vals[idx]))
-            end
-        end
-        resize!(pos, k); resize!(zv, k)
-        push!(S, Hecke.sparse_row(Hecke.ZZ, pos, zv))
-    end
-    return S
 end
 
 """
