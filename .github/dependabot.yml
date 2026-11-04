@@ -4,7 +4,9 @@
 version: 2
 updates:
   - package-ecosystem: "julia"
-    directory: "/"
+    directories:   # the package and the environment of the documentation
+      - "/"
+      - "/docs"
     schedule:
       interval: "weekly"
   - package-ecosystem: "github-actions"
