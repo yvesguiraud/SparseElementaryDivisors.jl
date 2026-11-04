@@ -1,0 +1,10 @@
+[deps]
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+SparseElementaryDivisors = "ae1c1434-3cf1-4e28-ab82-3ca23b97895f"
+
+# The package itself, from this repository (Julia 1.11 or later for [sources]).
+[sources]
+SparseElementaryDivisors = {path = ".."}
+
+[compat]
+Documenter = "1"

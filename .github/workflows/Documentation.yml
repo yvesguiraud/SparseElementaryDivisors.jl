@@ -1,0 +1,37 @@
+name: Documentation
+on:
+  push:
+    branches:
+      - main
+    tags: ['*']
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  # Cancel superseded runs of the same branch or pull request
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+jobs:
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      actions: write    # lets julia-actions/cache delete the old caches it created
+      contents: write   # pushes the site to the branch gh-pages
+      statuses: write   # lets Documenter report the deployment on the commit
+    steps:
+      - uses: actions/checkout@v7
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1'
+      - uses: julia-actions/cache@v3
+      - name: Install the documentation environment
+        run: julia --project=docs --color=yes -e 'using Pkg; Pkg.instantiate()'
+      # Builds the site; publishes it for a push on main (dev/) or a tag (vX.Y.Z/ and stable/),
+      # not for a pull request. The deploy key DOCUMENTER_KEY is used if the secret is set
+      # (needed for the tags created by TagBot), GITHUB_TOKEN otherwise.
+      - name: Build and publish
+        run: julia --project=docs --color=yes docs/make.jl
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
