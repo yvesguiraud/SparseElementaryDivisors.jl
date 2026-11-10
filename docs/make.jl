@@ -19,18 +19,20 @@ makedocs(;
     checkdocs = :public,
     doctest = false,
     format = Documenter.HTML(;
-        # Pretty URLs (guide/ instead of guide.html) on the CI only, so that the local build
-        # can be read by opening docs/build/index.html, without a web server.
+        # Pretty URLs (user_guide/ instead of user_guide.html) on the CI only, so that the
+        # local build can be read by opening docs/build/index.html, without a web server.
         prettyurls = get(ENV, "CI", nothing) == "true",
         canonical = "https://yvesguiraud.github.io/SparseElementaryDivisors.jl/stable/",
         edit_link = "main",
+        # Hides the headings of the current page in the sidebar (docs/src/assets/custom.css).
+        assets = ["assets/custom.css"],
     ),
     pages = [
         "Home" => "index.md",
-        "Guide" => "guide.md",
-        "Reference" => "reference.md",
+        "User guide" => "user_guide.md",
         "Benchmarks" => "benchmarks.md",
-        "References" => "references.md",
+        "Reference manual" => "reference_manual.md",
+        "Bibliography" => "bibliography.md",
     ],
 )
 

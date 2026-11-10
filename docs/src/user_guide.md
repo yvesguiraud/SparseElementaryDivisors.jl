@@ -1,10 +1,10 @@
-# Guide
+# User guide
 
 ```@meta
 CurrentModule = SparseElementaryDivisors
 ```
 
-This page explains how to call [`sparse_elementary_divisors`](@ref) and what its options do; the complete descriptions are in the [Reference](reference.md).
+This page explains how to call [`sparse_elementary_divisors`](@ref) and what its options do; the complete descriptions are in the [Reference manual](reference_manual.md).
 
 ## Input
 
@@ -98,4 +98,4 @@ The matrix is stored both by rows and by columns, and reduced in three steps:
 2. each following step chooses an entry ±1 of small Markowitz score ``(r - 1)(c - 1)``, where ``r`` and ``c`` are the numbers of entries of its row and of its column, eliminates its row and its column, and runs the structured elimination again;
 3. when no entry ±1 is left, the remaining matrix, the core, goes to `Hecke.elementary_divisors` (Hecke and Nemo, on FLINT), as a sparse or a dense matrix.
 
-Each pivot ±1 gives an elementary divisor 1. The method suits matrices with many entries ±1 and few entries per row and column, such as the differentials of resolutions, where the core is small. When few pivots ±1 are available, most of the work is done by Hecke on a large core. The articles behind these steps are listed in [References](references.md).
+Each pivot ±1 gives an elementary divisor 1. The method suits matrices with many entries ±1 and few entries per row and column, such as the differentials of resolutions, where the core is small. When few pivots ±1 are available, most of the work is done by Hecke on a large core. The articles behind these steps are listed in the [Bibliography](bibliography.md).

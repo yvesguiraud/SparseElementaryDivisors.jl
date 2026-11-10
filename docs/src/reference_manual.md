@@ -1,4 +1,4 @@
-# Reference
+# Reference manual
 
 ```@meta
 CurrentModule = SparseElementaryDivisors
@@ -9,7 +9,7 @@ SparseElementaryDivisors
 ```
 
 ```@index
-Pages = ["reference.md"]
+Pages = ["reference_manual.md"]
 ```
 
 ## Elementary divisors
