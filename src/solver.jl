@@ -1,12 +1,9 @@
-# solver.jl — core reduction: sparse elimination with unit (±1) pivots, Markowitz-style pivot choice,
-# parallel pivot search and fill-in application, exact checked integer arithmetic.
+# solver.jl — core reduction: sparse elimination with unit (±1) pivots, Markowitz-style pivot choice, parallel pivot search and fill-in application, exact checked integer arithmetic.
 
 """
     RowsData{V}
 
-A matrix given row by row: `rows[r]` is the vector of the `(column, value)` pairs of row `r`,
-columns strictly increasing, values of type `V <: Integer` (`Int`, or `BigInt` for entries
-beyond a machine word).
+A matrix given row by row: `rows[r]` is the vector of the `(column, value)` pairs of row `r`, columns strictly increasing, values of type `V <: Integer` (`Int`, or `BigInt` for entries beyond a machine word).
 """
 const RowsData{V} = Vector{Vector{Tuple{Int, V}}}
 
@@ -20,7 +17,7 @@ mutable struct DegreeBuckets
     pos_in_bucket::Vector{Int}     # current position of each index in its current bucket
     bucket_of::Vector{Int}         # (1-based) index of the current bucket of each entity
     max_deg::Int
-    low::Int                       # cursor (P5): the buckets of the degrees d with 2 ≤ d < low are
+    low::Int                       # cursor: the buckets of the degrees d with 2 ≤ d < low are
                                    # empty; lowered by _bucket_insert!, raised by the pivot search
 end
 
@@ -42,8 +39,7 @@ end
 @inline degree_to_bucket_idx(db::DegreeBuckets, d::Int)::Int =
     d <= db.max_deg ? d + 1 : db.max_deg + 2
 
-# The only way, besides the constructor (where `low = 2` holds trivially), for an index to
-# enter a bucket: keeps the invariant of `low`.
+# The only way, besides the constructor (where `low = 2` holds trivially), for an index to enter a bucket: keeps the invariant of `low`.
 function _bucket_insert!(db::DegreeBuckets, i::Int, d::Int)
     bidx = degree_to_bucket_idx(db, d)
     bucket = db.buckets[bidx]
@@ -69,9 +65,9 @@ function _bucket_remove!(db::DegreeBuckets, i::Int)
 end
 
 """
-    update_degrees!(db, i, new_d)
+    update_degrees!(db::DegreeBuckets, i::Int, new_d::Int)
 
-Move entity `i` to the bucket matching its new degree `new_d`, if the degree changed bucket. Amortised O(1) cost.
+Move entity `i` to the bucket of its new degree `new_d`, if that bucket is a different one. Amortised O(1) cost.
 """
 function update_degrees!(db::DegreeBuckets, i::Int, new_d::Int)
     new_bidx = degree_to_bucket_idx(db, new_d)
@@ -90,20 +86,30 @@ end
 
 True if `v` equals 1 or -1 in type `T`.
 """
-@inline is_unit(v::T) where {T} = v == one(T) || v == -one(T)
+@inline is_unit(v::T) where T = v == one(T) || v == -one(T)
 
 mutable struct UnitColumnIndex
-    unit_count::Vector{Int}    # number of ±1 entries, per column
+    unit_count::Vector{Int}     # number of ±1 entries, per column
     buckets::DegreeBuckets      # subset of col_buckets restricted to unit_count[c] > 0
 end
 
 """
-    UnitColumnIndex(col_rows, col_vals, n, max_deg)
+    UnitColumnIndex(
+    col_rows::Vector{Vector{Int}}, 
+    col_vals::Vector{Vector{T}}, 
+    n::Int, 
+    max_deg::Int
+    ) where T
 
 Initial construction by a full scan (done once, when the matrix is created): all later updates are incremental (see remove_entry! and merge_col!).
 """
-function UnitColumnIndex(col_rows::Vector{Vector{Int}}, col_vals::Vector{Vector{T}},
-                          n::Int, max_deg::Int) where {T}
+function UnitColumnIndex(
+    col_rows::Vector{Vector{Int}}, 
+    col_vals::Vector{Vector{T}},
+    n::Int, 
+    max_deg::Int
+    ) where T
+    
     unit_count = zeros(Int, n)
     buckets = [Int[] for _ ∈ 1:(max_deg + 2)]
     pos_in_bucket = zeros(Int, n)
@@ -120,7 +126,13 @@ function UnitColumnIndex(col_rows::Vector{Vector{Int}}, col_vals::Vector{Vector{
     return UnitColumnIndex(unit_count, db)
 end
 
-function unit_index_sync!(ui::UnitColumnIndex, c::Int, new_count::Int, new_deg::Int)
+function unit_index_sync!(
+    ui::UnitColumnIndex, 
+    c::Int, 
+    new_count::Int, 
+    new_deg::Int
+    )
+
     old_count = ui.unit_count[c]
     ui.unit_count[c] = new_count
     if old_count == 0 && new_count > 0
@@ -173,24 +185,30 @@ end
 # Degrees above this bound share the overflow bucket.
 const _MAX_TRACKED_DEGREE = 10_000
 
-# Largest degree with its own bucket (P5): a row has at most n entries and a column at most m,
-# so that with max(m, n) no entity reaches the overflow bucket, as with the bound 10 000 when
-# max(m, n) ≤ 10 000 (the buckets beyond max(m, n) were always empty): same trajectory, bit for
-# bit. At least 1, so that the bucket of degree 1 (structured elimination) is never the overflow
-# bucket.
+# Largest degree with its own bucket: a row has at most n entries and a column at most m, so that with max(m, n) no entity reaches the overflow bucket, as with the bound 10 000 when max(m, n) ≤ 10 000 (the buckets beyond max(m, n) were always empty): same trajectory, bit for bit. At least 1, so that the bucket of degree 1 (structured elimination) is never the overflow bucket.
 _max_tracked_degree(m::Int, n::Int) = clamp(max(m, n), 1, _MAX_TRACKED_DEGREE)
 
 """
-    DualSparseMatrix(rows_data, m, n; max_tracked_degree = _max_tracked_degree(m, n),
-                     value_type::Type{T} = Int32)
+    DualSparseMatrix(
+        rows_data::RowsData{<:Integer}, 
+        m::Int, 
+        n::Int; 
+        max_tracked_degree = _max_tracked_degree(m, n), 
+        value_type::Type{T} = Int32
+        )
 
 Build the matrix in linear time from the vector of `(j, v)` pairs of each row, already sorted by increasing row and column number. `value_type` sets the storage type of the coefficients (`T = Int32` by default). `max_tracked_degree`: largest degree with its own bucket, `clamp(max(m, n), 1, 10_000)` by default.
 
 Precondition, not checked here (the loop writes with `@inbounds` and the merges assume it): `length(rows_data) == m`, in each row columns in `1:n` and strictly increasing, and values that fit in `T`. The public entry point checks the first two once with `_check_rows` and chooses `T` accordingly; the conversions `_rows_data` produce such rows.
 """
-function DualSparseMatrix(rows_data::RowsData{<:Integer}, m::Int, n::Int;
-                            max_tracked_degree::Int = _max_tracked_degree(m, n),
-                            value_type::Type{T} = Int32) where {T}
+function DualSparseMatrix(
+    rows_data::RowsData{<:Integer}, 
+    m::Int, 
+    n::Int;
+    max_tracked_degree::Int = _max_tracked_degree(m, n),
+    value_type::Type{T} = Int32
+    ) where T
+    
     row_cols = [Int[] for _ ∈ 1:m]
     row_vals = [T[] for _ ∈ 1:m]
     col_rows = [Int[] for _ ∈ 1:n]
@@ -227,14 +245,12 @@ function DualSparseMatrix(rows_data::RowsData{<:Integer}, m::Int, n::Int;
     )
 end
 
-########################################
+#######################################
 ### Point removal of an entry (SGE) ###
-########################################
+#######################################
 
-# Used only by the structured elimination (below), which removes entries as they are: no
-# arithmetic, hence no overflow risk here. Removes the entry (r, c) if present, on the column
-# side (buckets and unit index updated) then on the row side.
-function remove_entry!(M::DualSparseMatrix{T}, r::Int, c::Int) where {T}
+# Used only by the structured elimination (below), which removes entries as they are: no arithmetic, hence no overflow risk here. Removes the entry (r, c) if present, on the column side (buckets and unit index updated) then on the row side.
+function remove_entry!(M::DualSparseMatrix{T}, r::Int, c::Int) where T
     c_rows = M.col_rows[c]
     c_vals = M.col_vals[c]
     idx_r = searchsortedfirst(c_rows, r)
@@ -264,7 +280,7 @@ end
 
 # (No fill-in is created here, hence no overflow risk.)
 
-function eliminate_structured!(M::DualSparseMatrix{T})::Int where {T}
+function eliminate_structured!(M::DualSparseMatrix{T})::Int where T
     n_ones = 0
     progress = true
 
@@ -328,18 +344,16 @@ end
 
 # Written directly into the shared scratch buffer (no separate compute/commit phases).
 
-# _sub_mul / _neg_mul / _checked_negate: checked arithmetic helpers, for the signed integers
-# of fixed width (those of Base, or wider ones such as Int256 of BitIntegers.jl, whose
-# *_with_overflow methods Base.checked_* use), plain arithmetic for BigInt.
-@inline _sub_mul(curr::T, factor::T, other::T) where {T<:Signed} =
+# _sub_mul / _neg_mul / _checked_negate: checked arithmetic helpers, for the signed integers of fixed width (those of Base, or wider ones such as Int256 of BitIntegers.jl, whose *_with_overflow methods Base.checked_* use), plain arithmetic for BigInt.
+@inline _sub_mul(curr::T, factor::T, other::T) where T<:Signed =
     Base.checked_sub(curr, Base.checked_mul(factor, other))
 @inline _sub_mul(curr::BigInt, factor::BigInt, other::BigInt) = curr - factor * other
 
-@inline _neg_mul(factor::T, other::T) where {T<:Signed} =
+@inline _neg_mul(factor::T, other::T) where T<:Signed =
     Base.checked_sub(zero(T), Base.checked_mul(factor, other))
 @inline _neg_mul(factor::BigInt, other::BigInt) = -(factor * other)
 
-@inline _checked_negate(v::T) where {T<:Signed} = Base.checked_sub(zero(T), v)
+@inline _checked_negate(v::T) where T<:Signed = Base.checked_sub(zero(T), v)
 @inline _checked_negate(v::BigInt) = -v
 
 """
@@ -347,15 +361,21 @@ end
 
 Ensure `length(buf) >= needed`, with amortised doubling.
 """
-@inline function _ensure_capacity!(buf::Vector{T}, needed::Int) where {T}
+@inline function _ensure_capacity!(buf::Vector{T}, needed::Int) where T
     if length(buf) < needed
         resize!(buf, max(needed, 2 * length(buf)))
     end
     return nothing
 end
 
-@inline function _merge_write_or_skip!(out_keys::Vector{Int}, out_vals::Vector{T},
-                                        k::Int, key::Int, val::T)::Int where {T}
+@inline function _merge_write_or_skip!(
+    out_keys::Vector{Int}, 
+    out_vals::Vector{T},
+    k::Int, 
+    key::Int, 
+    val::T
+    )::Int where T
+    
     iszero(val) && return k
     k += 1
     @inbounds out_keys[k] = key
@@ -364,15 +384,30 @@ end
 end
 
 """
-    merge_row!(M, sr, skip_col, new_cols, new_vals, factor, release)
+    merge_row!(
+        M::DualSparseMatrix{T}, 
+        sr::Int, 
+        skip_col::Int, 
+        new_cols::Vector{Int}, 
+        new_vals::Vector{T}, 
+        factor::T, 
+        release::Bool
+        ) where T
 
 Sorted merge in O(n_old + n_new), written into the shared scratch buffer (`M._merge_cols_buf` / `M._merge_vals_buf`), then copied into `row_cols[sr]` / `row_vals[sr]`. Checked arithmetic (`_sub_mul` / `_neg_mul`). `release`: the setting `release_empty_vectors` of [`ReductionConfig`](@ref) (a row that becomes empty gets fresh vectors, which frees its capacity).
 
 ⚠️ No guarantee of non-mutation on overflow: `M` must be abandoned entirely as soon as an `OverflowError` is raised here, never reused — this is what `reduce_to_core!` guarantees.
 """
-function merge_row!(M::DualSparseMatrix{T}, sr::Int, skip_col::Int,
-                           new_cols::Vector{Int}, new_vals::Vector{T}, factor::T,
-                           release::Bool) where {T}
+function merge_row!(
+    M::DualSparseMatrix{T}, 
+    sr::Int, 
+    skip_col::Int,
+    new_cols::Vector{Int}, 
+    new_vals::Vector{T}, 
+    factor::T,
+    release::Bool
+    ) where T
+    
     old_cols = M.row_cols[sr]
     old_vals = M.row_vals[sr]
     n_old = length(old_cols)
@@ -417,9 +452,7 @@ function merge_row!(M::DualSparseMatrix{T}, sr::Int, skip_col::Int,
     end
 
     if k == 0 && release
-        # Row became empty: replace its vectors by fresh ones. `resize!(v, 0)` would keep the whole
-        # capacity (ZT2w4m5 d₄: ~15 GiB of capacity in 1.3 M empty vectors, 44 s of GC).
-        # Writing to a slot owned by this row: safe inside a parallel region.
+        # Row became empty: replace its vectors by fresh ones. `resize!(v, 0)` would keep the whole capacity (ZT2w4m5 d₄: ~15 GiB of capacity in 1.3 M empty vectors, 44 s of GC). Writing to a slot owned by this row: safe inside a parallel region.
         old_cols = Int[]; old_vals = T[]
         M.row_cols[sr] = old_cols; M.row_vals[sr] = old_vals
     else
@@ -433,14 +466,29 @@ function merge_row!(M::DualSparseMatrix{T}, sr::Int, skip_col::Int,
 end
 
 """
-    merge_col!(M, c_piv, skip_row, new_rows, factors, v_p, release)
+    merge_col!(
+        M::DualSparseMatrix{T}, 
+        c_piv::Int, 
+        skip_row::Int, 
+        new_rows::Vector{Int}, 
+        factors::Vector{T}, 
+        v_p::T, 
+        release::Bool
+        ) where T
 
 Column-side counterpart of `merge_row!`.
 """
-function merge_col!(M::DualSparseMatrix{T}, c_piv::Int, skip_row::Int,
-                           new_rows::Vector{Int}, factors::Vector{T}, v_p::T,
-                           release::Bool) where {T}
-    old_rows = M.col_rows[c_piv]
+function merge_col!(
+        M::DualSparseMatrix{T}, 
+        c_piv::Int, 
+        skip_row::Int,
+        new_rows::Vector{Int}, 
+        factors::Vector{T}, 
+        v_p::T,
+        release::Bool
+        ) where T
+    
+        old_rows = M.col_rows[c_piv]
     old_vals = M.col_vals[c_piv]
     n_old = length(old_rows)
     n_new = length(new_rows)
@@ -511,16 +559,9 @@ end
 """
     SparseElementaryDivisors.ReductionTrace()
 
-Trajectory fingerprint, a developer tool (public, not exported): passed to
-[`sparse_elementary_divisors`](@ref) with the keyword `trace`, it receives a running hash
-(FNV-1a on 64-bit words) of the Markowitz pivots `(row, column)` and of the calls of the
-structured elimination, in order. Two computations with the same fingerprint chose the same
-pivots in the same order; the test suite compares it with references computed by v0.1.0, for
-1 to 4 workers and with the parallel paths forced. Reset at the start of each attempt of the
-widening: it describes the attempt retained.
+Trajectory fingerprint, a developer tool (public, not exported): passed to [`sparse_elementary_divisors`](@ref) with the keyword `trace`, it receives a running hash (FNV-1a on 64-bit words) of the Markowitz pivots `(row, column)` and of the calls of the structured elimination, in order. Two computations with the same fingerprint chose the same pivots in the same order; the test suite compares it with references computed by v0.1.0, for 1 to 4 workers and with the parallel paths forced. Reset at the start of each attempt of the widening: it describes the attempt retained.
 
-Fields: `h` (hash), `n_pivots` (Markowitz pivots), `n_sge` (calls of the structured
-elimination), `sum_ones` (unit pivots found by the structured elimination).
+Fields: `h` (hash), `n_pivots` (Markowitz pivots), `n_sge` (calls of the structured elimination), `sum_ones` (unit pivots found by the structured elimination).
 """
 mutable struct ReductionTrace
     h::UInt64
@@ -556,14 +597,12 @@ end
     return nothing
 end
 Base.show(io::IO, tr::ReductionTrace) =
-    print(io, "ReductionTrace(h=0x", string(tr.h; base = 16), ", pivots=", tr.n_pivots,
-          ", sge=", tr.n_sge, ", ones_sge=", tr.sum_ones, ")")
+    print(io, "ReductionTrace(h=0x", string(tr.h; base = 16), ", pivots=", tr.n_pivots, ", sge=", tr.n_sge, ", ones_sge=", tr.sum_ones, ")")
 
 """
     ReductionStats()
 
-Statistics of a computation, filled in place by [`sparse_elementary_divisors`](@ref) through its
-keyword `stats`:
+Statistics of a computation, filled in place by [`sparse_elementary_divisors`](@ref) through its keyword `stats`:
 
 ```julia
 st = ReductionStats()
@@ -571,36 +610,25 @@ d = sparse_elementary_divisors(A; stats = st)
 st.value_type        # the integer type retained by the widening
 ```
 
-All the fields are reset at the start of each call. The counters, times and core describe the
-attempt retained (the one that did not overflow); with `value_type = :auto` or a sequence of
-types, the attempts that overflowed before it are listed in `failed_attempts`. One object per
-computation: two computations running at the same time must not share it.
+All the fields are reset at the start of each call. The counters, times and core describe the attempt retained (the one that did not overflow); with `value_type = :auto` or a sequence of types, the attempts that overflowed before it are listed in `failed_attempts`. One object per computation: two computations running at the same time must not share it.
 
 Widening:
-- `value_type`: the type retained, `nothing` before the end of a computation (and after an
-  error);
-- `failed_attempts`: the attempts that overflowed, as `(value_type, unit_pivots, seconds)`, in
-  order; the last one included when the last type does not suffice (the error is then
-  raised).
+- `value_type`: the type retained, `nothing` before the end of a computation (and after an error);
+- `failed_attempts`: the attempts that overflowed, as `(value_type, unit_pivots, seconds)`, in order; the last one included when the last type does not suffice (the error is then raised).
 
 Elimination (attempt retained):
-- `unit_pivots`: ±1 pivots of the structured elimination and of the Markowitz loop, that is
-  the elementary divisors equal to 1 found before the core;
+- `unit_pivots`: ±1 pivots of the structured elimination and of the Markowitz loop, that is the elementary divisors equal to 1 found before the core;
 - `markowitz_pivots`: those of the Markowitz loop;
-- `parallel_searches`, `sequential_searches`: bucket scans of the pivot search, parallel or
-  sequential;
-- `parallel_applications`, `sequential_applications`: pivot applications (merges), parallel
-  or sequential.
+- `parallel_searches`, `sequential_searches`: bucket scans of the pivot search, parallel or sequential;
+- `parallel_applications`, `sequential_applications`: pivot applications (merges), parallel or sequential.
 
 Times, in seconds:
-- `sge_seconds`, `search_seconds`, `apply_seconds`: structured elimination, pivot search,
-  pivot application;
+- `sge_seconds`, `search_seconds`, `apply_seconds`: structured elimination, pivot search, pivot application;
 - `core_seconds`: extraction of the core and its elementary divisors by Hecke.
 
 Core and context:
 - `core_size`: `(rows, cols, nnz)` of the core left by the elimination;
-- `core_format`: `:none` (empty core), `:sparse` or `:dense` (see `core_format` in
-  [`ReductionConfig`](@ref));
+- `core_format`: `:none` (empty core), `:sparse` or `:dense` (see `core_format` in [`ReductionConfig`](@ref));
 - `nworkers`: number of workers used.
 """
 mutable struct ReductionStats
@@ -621,8 +649,7 @@ mutable struct ReductionStats
     nworkers::Int
 end
 ReductionStats() =
-    ReductionStats(nothing, NamedTuple{(:value_type, :unit_pivots, :seconds), Tuple{Type, Int, Float64}}[],
-                   0, 0, 0, 0, 0, 0, 0.0, 0.0, 0.0, 0.0, (rows = 0, cols = 0, nnz = 0), :none, 0)
+    ReductionStats(nothing, NamedTuple{(:value_type, :unit_pivots, :seconds), Tuple{Type, Int, Float64}}[], 0, 0, 0, 0, 0, 0, 0.0, 0.0, 0.0, 0.0, (rows = 0, cols = 0, nnz = 0), :none, 0)
 
 # The counters, times, core and workers back to zero (at the start of each attempt).
 function _reset_counters!(s::ReductionStats)
@@ -674,10 +701,7 @@ end
 """
     ReductionConfig(; kwargs...)
 
-Settings of one attempt of the reduction, each with its default; an immutable value, which can
-be kept and reused (for instance for all the differentials of a complex). Pass it to
-[`sparse_elementary_divisors`](@ref) with the keyword `config`; each field can also be given
-there directly as a keyword, which then takes precedence over `config`:
+Settings of one attempt of the reduction, each with its default; an immutable value, which can be kept and reused (for instance for all the differentials of a complex). Pass it to [`sparse_elementary_divisors`](@ref) with the keyword `config`; each field can also be given there directly as a keyword, which then takes precedence over `config`:
 
 ```julia
 cfg = ReductionConfig(nworkers = 4, core_format = :sparse)
@@ -686,50 +710,29 @@ sparse_elementary_divisors(A; config = cfg, nworkers = 1)     # nworkers = 1 win
 sparse_elementary_divisors(A; search_mode = :never)           # without building a config
 ```
 
-No setting changes the elementary divisors; the pivot search parameters change the order of
-the pivots (hence the time, the fill-in and the size of the coefficients), the others only how
-the work is done. The values are checked at construction (`ArgumentError`).
+No setting changes the elementary divisors; the pivot search parameters change the order of the pivots (hence the time, the fill-in and the size of the coefficients), the others only how the work is done. The values are checked at construction (`ArgumentError`).
 
-Pivot search (±1 pivots, Markowitz score `(row degree - 1)(column degree - 1)` after Markowitz
-(1957), columns visited by increasing degree):
-- `acceptable_score_threshold = 4`: the search stops at the first pivot whose score is at
-  most this value (`≥ 0`);
-- `max_buckets_scanned = 1`: maximum number of non-empty degree buckets visited by a search
-  (`≥ 1`).
+Pivot search (±1 pivots, Markowitz score `(row degree - 1)(column degree - 1)` after Markowitz (1957), columns visited by increasing degree):
+- `acceptable_score_threshold = 4`: the search stops at the first pivot whose score is at most this value (`≥ 0`);
+- `max_buckets_scanned = 1`: maximum number of non-empty degree buckets visited by a search (`≥ 1`).
 
 Parallelism (the result does not depend on it, bit for bit):
-- `nworkers = nothing`: number of workers, the calling thread included; `nothing` means
-  `Threads.nthreads()` at the time of the call (start Julia with `-t auto` or `-t N`);
-- `apply_min_work = 25_000`: work (entries traversed by the merges of a pivot) below which the
-  application of a pivot stays sequential;
+- `nworkers = nothing`: number of workers, the calling thread included; `nothing` means `Threads.nthreads()` at the time of the call (start Julia with `-t auto` or `-t N`);
+- `apply_min_work = 25_000`: work (entries traversed by the merges of a pivot) below which the application of a pivot stays sequential;
 - `apply_chunk_max = 32`: maximum size of an application chunk;
-- `search_mode = :auto`: `:auto` (cost rule below), `:always` (parallel as soon as
-  `nworkers > 1`), `:never`, or `:floor` (parallel when the bucket has at least
-  `search_parallel_min_work` entries, without the cost rule);
+- `search_mode = :auto`: `:auto` (cost rule below), `:always` (parallel as soon as `nworkers > 1`), `:never`, or `:floor` (parallel when the bucket has at least `search_parallel_min_work` entries, without the cost rule);
 - `search_parallel_min_work = 5000`: floor of the `:auto` rule, in bucket entries;
-- `search_ns_per_entry = 8.0`, `parallel_fixed_cost_ns = 50_000.0`,
-  `apply_parallel_penalty = 0.1`: constants of the `:auto` rule, calibrated on a 24-thread
-  workstation (Intel Core Ultra 9 285): a bucket of `e` entries is scanned in parallel when
-  the saving `e · search_ns_per_entry · (1 - 1/nworkers)` exceeds
-  `parallel_fixed_cost_ns + apply_parallel_penalty · (recent application time in ns)`;
-- `apply_ema_alpha = 0.05`: weight of the moving average of the application time, in
-  `(0, 1]`;
-- `search_chunk_min = 4`, `search_chunk_max = 256`: bounds on the size of the search chunks
-  (columns).
+- `search_ns_per_entry = 8.0`, `parallel_fixed_cost_ns = 50_000.0`, `apply_parallel_penalty = 0.1`: constants of the `:auto` rule, calibrated on a 24-thread workstation (Intel Core Ultra 9 285): a bucket of `e` entries is scanned in parallel when the saving `e · search_ns_per_entry · (1 - 1/nworkers)` exceeds `parallel_fixed_cost_ns + apply_parallel_penalty · (recent application time in ns)`;
+- `apply_ema_alpha = 0.05`: weight of the moving average of the application time, in `(0, 1]`;
+- `search_chunk_min = 4`, `search_chunk_max = 256`: bounds on the size of the search chunks (columns).
 
 Core (what the elimination leaves, passed to Hecke):
-- `core_format = :auto`: `:sparse` (`SMat`), `:dense` (Flint `ZZMatrix`, an extraction without
-  pressure on the garbage collector: ZT2w4m5 d₄, 0.6 s instead of 422 s), or `:auto` (dense
-  when the density of the core is at least `dense_min_density` and its dense form takes at most
-  `dense_max_bytes` bytes, sparse otherwise);
+- `core_format = :auto`: `:sparse` (`SMat`), `:dense` (Flint `ZZMatrix`, an extraction without pressure on the garbage collector: ZT2w4m5 d₄, 0.6 s instead of 422 s), or `:auto` (dense when the density of the core is at least `dense_min_density` and its dense form takes at most `dense_max_bytes` bytes, sparse otherwise);
 - `dense_min_density = 0.05`, in `[0, 1]`;
 - `dense_max_bytes = 16 * 2^30`.
 
 Memory:
-- `release_empty_vectors = false`: if `true`, a row or column that becomes empty during a merge
-  gets fresh vectors, which frees its capacity (by default its vectors are emptied and keep their
-  capacity). On Windows, this reduced the heap of ZT2w4m5 d₄ from 22 to 9 GiB, but about
-  doubled the total time (garbage collection); not measured on Linux yet.
+- `release_empty_vectors = false`: if `true`, a row or column that becomes empty during a merge gets fresh vectors, which frees its capacity (by default its vectors are emptied and keep their capacity). On Windows, this reduced the heap of ZT2w4m5 d₄ from 22 to 9 GiB, but about doubled the total time (garbage collection); not measured on Linux yet.
 """
 struct ReductionConfig
     acceptable_score_threshold::Int
@@ -751,39 +754,20 @@ struct ReductionConfig
     release_empty_vectors::Bool
 
     # The only constructor: every other one ends here, so that every configuration is checked.
-    function ReductionConfig(acceptable_score_threshold, max_buckets_scanned, nworkers,
-                             apply_min_work, apply_chunk_max, search_mode, search_parallel_min_work,
-                             search_ns_per_entry, parallel_fixed_cost_ns, apply_parallel_penalty,
-                             apply_ema_alpha, search_chunk_min, search_chunk_max, core_format,
-                             dense_min_density, dense_max_bytes, release_empty_vectors)
-        c = new(acceptable_score_threshold, max_buckets_scanned, nworkers, apply_min_work,
-                apply_chunk_max, search_mode, search_parallel_min_work, search_ns_per_entry,
-                parallel_fixed_cost_ns, apply_parallel_penalty, apply_ema_alpha, search_chunk_min,
-                search_chunk_max, core_format, dense_min_density, dense_max_bytes,
-                release_empty_vectors)
+    function ReductionConfig(acceptable_score_threshold, max_buckets_scanned, nworkers, apply_min_work, apply_chunk_max, search_mode, search_parallel_min_work, search_ns_per_entry, parallel_fixed_cost_ns, apply_parallel_penalty, apply_ema_alpha, search_chunk_min, search_chunk_max, core_format, dense_min_density, dense_max_bytes, release_empty_vectors)
+        c = new(acceptable_score_threshold, max_buckets_scanned, nworkers, apply_min_work, apply_chunk_max, search_mode, search_parallel_min_work, search_ns_per_entry, parallel_fixed_cost_ns, apply_parallel_penalty, apply_ema_alpha, search_chunk_min, search_chunk_max, core_format, dense_min_density, dense_max_bytes, release_empty_vectors)
         _check_config(c)
         return c
     end
 end
 
-function ReductionConfig(; acceptable_score_threshold = 4, max_buckets_scanned = 1,
-                         nworkers = nothing, apply_min_work = 25_000, apply_chunk_max = 32,
-                         search_mode = :auto, search_parallel_min_work = 5000,
-                         search_ns_per_entry = 8.0, parallel_fixed_cost_ns = 50_000.0,
-                         apply_parallel_penalty = 0.1, apply_ema_alpha = 0.05,
-                         search_chunk_min = 4, search_chunk_max = 256, core_format = :auto,
-                         dense_min_density = 0.05, dense_max_bytes = 16 * 2^30,
-                         release_empty_vectors = false)
-    return ReductionConfig(acceptable_score_threshold, max_buckets_scanned, nworkers,
-                           apply_min_work, apply_chunk_max, search_mode, search_parallel_min_work,
-                           search_ns_per_entry, parallel_fixed_cost_ns, apply_parallel_penalty,
-                           apply_ema_alpha, search_chunk_min, search_chunk_max, core_format,
-                           dense_min_density, dense_max_bytes, release_empty_vectors)
+function ReductionConfig(; acceptable_score_threshold = 4, max_buckets_scanned = 1, nworkers = nothing, apply_min_work = 25_000, apply_chunk_max = 32, search_mode = :auto, search_parallel_min_work = 5000, search_ns_per_entry = 8.0, parallel_fixed_cost_ns = 50_000.0, apply_parallel_penalty = 0.1, apply_ema_alpha = 0.05, search_chunk_min = 4, search_chunk_max = 256, core_format = :auto, dense_min_density = 0.05, dense_max_bytes = 16 * 2^30,
+release_empty_vectors = false)
+    return ReductionConfig(acceptable_score_threshold, max_buckets_scanned, nworkers, apply_min_work, apply_chunk_max, search_mode, search_parallel_min_work, search_ns_per_entry, parallel_fixed_cost_ns, apply_parallel_penalty, apply_ema_alpha, search_chunk_min, search_chunk_max, core_format, dense_min_density, dense_max_bytes, release_empty_vectors)
 end
 
 function _check_config(c::ReductionConfig)
-    bad(field, rule) = throw(ArgumentError("ReductionConfig: $field must be $rule (got " *
-                                           "$(repr(getfield(c, field))))"))
+    bad(field, rule) = throw(ArgumentError("ReductionConfig: $field must be $rule (got " * "$(repr(getfield(c, field))))"))
     c.acceptable_score_threshold >= 0 || bad(:acceptable_score_threshold, "≥ 0")
     c.max_buckets_scanned >= 1 || bad(:max_buckets_scanned, "≥ 1")
     (c.nworkers === nothing || c.nworkers >= 1) || bad(:nworkers, "nothing or ≥ 1")
@@ -838,8 +822,7 @@ mutable struct SearchWorkspace
     min_r::Vector{Int}
     min_c::Vector{Int}
 end
-SearchWorkspace(cap::Int = 16) = SearchWorkspace(cap, zeros(Int8, cap), fill(false, cap),
-                                   fill(typemax(Int), cap), zeros(Int, cap), zeros(Int, cap))
+SearchWorkspace(cap::Int = 16) = SearchWorkspace(cap, zeros(Int8, cap), fill(false, cap), fill(typemax(Int), cap), zeros(Int, cap), zeros(Int, cap))
 
 function _sws_ensure!(sws::SearchWorkspace, n::Int)
     n <= sws.cap && return nothing
@@ -851,9 +834,7 @@ function _sws_ensure!(sws::SearchWorkspace, n::Int)
 end
 
 """
-Workspace of a reduction: per-worker merge buffers, unit-count buffer, search results, EMA, and
-the times accumulated for `ReductionStats` (integer nanoseconds, converted to seconds at the end
-of `reduce_to_core!`).
+Workspace of a reduction: per-worker merge buffers, unit-count buffer, search results, EMA, and the times accumulated for `ReductionStats` (integer nanoseconds, converted to seconds at the end of `reduce_to_core!`).
 """
 mutable struct ReductionWorkspace{T}
     nw::Int
@@ -867,10 +848,9 @@ mutable struct ReductionWorkspace{T}
     search_ns::Int
     apply_ns::Int
 end
-function ReductionWorkspace{T}(cfg::ReductionConfig) where {T}
+function ReductionWorkspace{T}(cfg::ReductionConfig) where T
     nw = _nworkers(cfg)
-    return ReductionWorkspace{T}(nw, [Int[] for _ ∈ 1:nw], [T[] for _ ∈ 1:nw], Int[], SearchWorkspace(),
-                                 0.0, false, 0, 0, 0)
+    return ReductionWorkspace{T}(nw, [Int[] for _ ∈ 1:nw], [T[] for _ ∈ 1:nw], Int[], SearchWorkspace(), 0.0, false, 0, 0, 0)
 end
 
 @inline function _update_ema!(wsp::ReductionWorkspace, dt_ns::Int, alpha::Float64)
@@ -887,13 +867,13 @@ end
 ######################################################
 
 """
-    _parallel_dynamic!(body, n, nw, chunk)
+    _parallel_dynamic!(body::F, n::Int, nw::Int, chunk::Int) where F
 
 Run `body(t, w)` for t ∈ 1:n on `nw` workers (w ∈ 1:nw; the calling thread is worker 1), dynamic distribution by chunks of `chunk` elements (atomic counter). `w` is assigned here (stable for the task): safe to index private buffers even if tasks migrate.
 
-Exception robustness: each worker catches the exception, stores it (only the first) and raises a stop flag checked by the others between two chunks; ALL tasks are awaited, then the original exception is rethrown by the caller (never a `TaskFailedException`).
+Exception robustness: each worker catches the exception, stores it (only the first) and raises a stop flag checked by the others between two chunks; all tasks are awaited, then the original exception is rethrown by the caller (never a `TaskFailedException`).
 """
-function _parallel_dynamic!(body::F, n::Int, nw::Int, chunk::Int) where {F}
+function _parallel_dynamic!(body::F, n::Int, nw::Int, chunk::Int) where F
     counter = Threads.Atomic{Int}(0)
     abort = Threads.Atomic{Bool}(false)
     err = Ref{Any}(nothing)
@@ -931,12 +911,10 @@ function _parallel_dynamic!(body::F, n::Int, nw::Int, chunk::Int) where {F}
 end
 
 #####################################################################
-### Per-worker merges (explicit output buffers, NO bucket update) ###
+### Per-worker merges (explicit output buffers, no bucket update) ###
 #####################################################################
 
-function _merge_row_buffered!(M::DualSparseMatrix{T}, sr::Int, skip_col::Int,
-                       new_cols::Vector{Int}, new_vals::Vector{T}, factor::T,
-                       out_cols::Vector{Int}, out_vals::Vector{T}, release::Bool) where {T}
+function _merge_row_buffered!(M::DualSparseMatrix{T}, sr::Int, skip_col::Int, new_cols::Vector{Int}, new_vals::Vector{T}, factor::T, out_cols::Vector{Int}, out_vals::Vector{T}, release::Bool) where T
     old_cols = M.row_cols[sr]
     old_vals = M.row_vals[sr]
     n_old = length(old_cols)
@@ -975,9 +953,7 @@ function _merge_row_buffered!(M::DualSparseMatrix{T}, sr::Int, skip_col::Int,
         j += 1
     end
     if k == 0 && release
-        # Row became empty: replace its vectors by fresh ones. `resize!(v, 0)` would keep the whole
-        # capacity (ZT2w4m5 d₄: ~15 GiB of capacity in 1.3 M empty vectors, 44 s of GC).
-        # Writing to a slot owned by this row: safe inside a parallel region.
+        # Row became empty: replace its vectors by fresh ones. `resize!(v, 0)` would keep the whole capacity (ZT2w4m5 d₄: ~15 GiB of capacity in 1.3 M empty vectors, 44 s of GC). Writing to a slot owned by this row: safe inside a parallel region.
         old_cols = Int[]; old_vals = T[]
         M.row_cols[sr] = old_cols; M.row_vals[sr] = old_vals
     else
@@ -988,9 +964,7 @@ function _merge_row_buffered!(M::DualSparseMatrix{T}, sr::Int, skip_col::Int,
 end
 
 # Returns the number of ±1 entries of the column after the merge.
-function _merge_col_buffered!(M::DualSparseMatrix{T}, c_piv::Int, skip_row::Int,
-                       new_rows::Vector{Int}, factors::Vector{T}, v_p::T,
-                       out_rows::Vector{Int}, out_vals::Vector{T}, release::Bool)::Int where {T}
+function _merge_col_buffered!(M::DualSparseMatrix{T}, c_piv::Int, skip_row::Int, new_rows::Vector{Int}, factors::Vector{T}, v_p::T, out_rows::Vector{Int}, out_vals::Vector{T}, release::Bool)::Int where T
     old_rows = M.col_rows[c_piv]
     old_vals = M.col_vals[c_piv]
     n_old = length(old_rows)
@@ -1052,8 +1026,7 @@ end
 # --------------------------- #
 
 # Sequential scan of chunk `ch` (positions k_lo:k_hi of the bucket).
-function _scan_chunk!(M::DualSparseMatrix{T}, bucket::Vector{Int}, target_deg::Int, thr::Int,
-                      ch::Int, chunk::Int, sws::SearchWorkspace) where {T}
+function _scan_chunk!(M::DualSparseMatrix{T}, bucket::Vector{Int}, target_deg::Int, thr::Int, ch::Int, chunk::Int, sws::SearchWorkspace) where T
     nb::Int = length(bucket)
     k_lo::Int = (ch - 1) * chunk + 1
     k_hi::Int = min(ch * chunk, nb)
@@ -1097,8 +1070,7 @@ function _scan_chunk!(M::DualSparseMatrix{T}, bucket::Vector{Int}, target_deg::I
 end
 
 # Parallel region: returns the number of chunks (results in `sws`).
-function _par_scan_bucket!(M::DualSparseMatrix{T}, bucket::Vector{Int}, target_deg::Int, thr::Int,
-                           nw::Int, sws::SearchWorkspace, chunk_min::Int, chunk_max::Int)::Int where {T}
+function _par_scan_bucket!(M::DualSparseMatrix{T}, bucket::Vector{Int}, target_deg::Int, thr::Int, nw::Int, sws::SearchWorkspace, chunk_min::Int, chunk_max::Int)::Int where T
     nb::Int = length(bucket)
     chunk::Int = clamp(nb ÷ (8 * nw), chunk_min, chunk_max)
     nch::Int = cld(nb, chunk)
@@ -1132,8 +1104,7 @@ end
 
 # Full search (main buckets, then overflow bucket). Returns (p_r, p_c, best_score).
 # Only the scan of a single bucket may be parallel.
-function _search_pivot!(M::DualSparseMatrix{T}, wsp::ReductionWorkspace{T}, cfg::ReductionConfig, nw::Int,
-                        stats::Union{Nothing, ReductionStats}) where {T}
+function _search_pivot!(M::DualSparseMatrix{T}, wsp::ReductionWorkspace{T}, cfg::ReductionConfig, nw::Int, stats::Union{Nothing, ReductionStats}) where T
     acceptable_score_threshold::Int = cfg.acceptable_score_threshold
     max_buckets_scanned::Int = cfg.max_buckets_scanned
     best_score::Int = typemax(Int)
@@ -1145,9 +1116,7 @@ function _search_pivot!(M::DualSparseMatrix{T}, wsp::ReductionWorkspace{T}, cfg:
     max_deg::Int = M.col_buckets.max_deg
     unit_buckets::DegreeBuckets = M.unit_index.buckets
 
-    # Cursor (P5): the buckets of the degrees 2 to low - 1 are empty; skip the empty ones that
-    # follow, and keep the position for the next search. The non-empty buckets visited are
-    # those of the full loop, in the same order: same pivot.
+    # Cursor: the buckets of the degrees 2 to low - 1 are empty; skip the empty ones that follow, and keep the position for the next search. The non-empty buckets visited are those of the full loop, in the same order: same pivot.
     first_deg::Int = unit_buckets.low
     @inbounds while first_deg <= max_deg && isempty(unit_buckets.buckets[first_deg + 1])
         first_deg += 1
@@ -1249,8 +1218,7 @@ end
 # ------------------- #
 
 # Sequential path: merges with a shared buffer, buckets updated on the fly.
-function _apply_pivot_sequential!(M::DualSparseMatrix{T}, p_r::Int, p_c::Int, n_sis::Int, n_pc::Int,
-                                  release::Bool) where {T}
+function _apply_pivot_sequential!(M::DualSparseMatrix{T}, p_r::Int, p_c::Int, n_sis::Int, n_pc::Int, release::Bool) where T
     @inbounds for i ∈ 1:n_sis
         sr = M._sister_rows_buf[i]
         factor = M._factors_buf[i]
@@ -1264,8 +1232,7 @@ function _apply_pivot_sequential!(M::DualSparseMatrix{T}, p_r::Int, p_c::Int, n_
     return nothing
 end
 
-@inline function _fillin_item!(M::DualSparseMatrix{T}, wsp::ReductionWorkspace{T}, t::Int, w::Int,
-                                p_r::Int, p_c::Int, n_sis::Int, release::Bool) where {T}
+@inline function _fillin_item!(M::DualSparseMatrix{T}, wsp::ReductionWorkspace{T}, t::Int, w::Int, p_r::Int, p_c::Int, n_sis::Int, release::Bool) where T
     out_keys = wsp.wkeys[w]
     out_vals = wsp.wvals[w]
     if t <= n_sis
@@ -1284,10 +1251,8 @@ end
     return nothing
 end
 
-# Parallel path: one region (rows AND columns), then a sequential pass over the buckets in the
-# same order as the sequential path (the only place where buckets are modified).
-function _apply_pivot_parallel!(M::DualSparseMatrix{T}, wsp::ReductionWorkspace{T}, p_r::Int, p_c::Int,
-                             n_sis::Int, n_pc::Int, nw::Int, chunk_max::Int, release::Bool) where {T}
+# Parallel path: one region (rows AND columns), then a sequential pass over the buckets in the same order as the sequential path (the only place where buckets are modified).
+function _apply_pivot_parallel!(M::DualSparseMatrix{T}, wsp::ReductionWorkspace{T}, p_r::Int, p_c::Int, n_sis::Int, n_pc::Int, nw::Int, chunk_max::Int, release::Bool) where T
     n_tot = n_sis + n_pc
     length(wsp.col_unit_buf) < n_pc && resize!(wsp.col_unit_buf, n_pc)
     chunk = clamp(n_tot ÷ (8 * nw), 1, chunk_max)
@@ -1308,28 +1273,25 @@ function _apply_pivot_parallel!(M::DualSparseMatrix{T}, wsp::ReductionWorkspace{
 end
 
 """
-    markowitz_pivot!(M; config = ReductionConfig(), workspace = nothing, trace = nothing,
-                     stats = nothing)::Bool
+    markowitz_pivot!(M::DualSparseMatrix{T}; config = ReductionConfig(), workspace = nothing, trace = nothing, stats = nothing)::Bool where T
 
-Perform one pivot step, with the settings of `config` (search parameters, parallelism,
-`release_empty_vectors`). Search and application may be parallel; the result is bit-identical
-for any number of workers. `workspace`: to provide in order to avoid recreating it at each call
-(done by `reduce_to_core!`); with `stats`, the times are accumulated in it (and converted into
-`stats` by `reduce_to_core!`), the counters directly in `stats`. `trace`: trajectory
-fingerprint.
+Perform one pivot step, with the settings of `config` (search parameters, parallelism, `release_empty_vectors`). Search and application may be parallel; the result is bit-identical for any number of workers. `workspace`: to provide in order to avoid recreating it at each call (done by `reduce_to_core!`); with `stats`, the times are accumulated in it (and converted into `stats` by `reduce_to_core!`), the counters directly in `stats`. `trace`: trajectory fingerprint.
 """
-function markowitz_pivot!(M::DualSparseMatrix{T};
-                          config::ReductionConfig = ReductionConfig(),
-                          workspace::Union{Nothing, ReductionWorkspace{T}} = nothing,
-                          trace::Union{Nothing, ReductionTrace} = nothing,
-                          stats::Union{Nothing, ReductionStats} = nothing)::Bool where {T}
+function markowitz_pivot!(
+    M::DualSparseMatrix{T};
+    config::ReductionConfig = ReductionConfig(),
+    workspace::Union{Nothing, ReductionWorkspace{T}} = nothing,
+    trace::Union{Nothing, ReductionTrace} = nothing,
+    stats::Union{Nothing, ReductionStats} = nothing
+    )::Bool where T
+
     wsp::ReductionWorkspace{T} = workspace === nothing ? ReductionWorkspace{T}(config) : workspace
     nw::Int = wsp.nw
     timing::Bool = stats !== nothing || (nw > 1 && config.search_mode === :auto)
     release::Bool = config.release_empty_vectors
 
     t0::UInt64 = stats === nothing ? UInt64(0) : time_ns()
-    p_r, p_c, best_score = _search_pivot!(M, wsp, config, nw, stats)
+    p_r, p_c, _ = _search_pivot!(M, wsp, config, nw, stats)
     stats === nothing || (wsp.search_ns += Int(time_ns() - t0))
     if p_r == -1; return false; end
     trace === nothing || _trace_pivot!(trace, p_r, p_c)
@@ -1390,9 +1352,7 @@ function markowitz_pivot!(M::DualSparseMatrix{T};
     end
 
     # --- Cleanup.
-    # Pivot row and column: replace them by fresh empty vectors instead of `empty!`, which would
-    # keep all the allocated capacity (ZT2w4m5 d₄: 21 GiB of capacity for 2.9 GiB of content,
-    # 43 s of GC). No alias exists after Phase 0 (the pivot buffers are copies).
+    # Pivot row and column: replace them by fresh empty vectors instead of `empty!`, which would keep all the allocated capacity (ZT2w4m5 d₄: 21 GiB of capacity for 2.9 GiB of content, 43 s of GC). No alias exists after Phase 0 (the pivot buffers are copies).
     M.row_cols[p_r] = Int[]; M.row_vals[p_r] = T[]
     M.col_rows[p_c] = Int[]; M.col_vals[p_c] = T[]
     update_degrees!(M.row_buckets, p_r, 0)
@@ -1442,22 +1402,18 @@ function _unwrap_task_failure(e)
 end
 
 """
-    reduce_to_core!(M; config = ReductionConfig(), trace = nothing, stats = nothing,
-                    probe = nothing)::Int
+    reduce_to_core!(M::DualSparseMatrix{T}; config = ReductionConfig(), trace = nothing, stats = nothing, probe = nothing)::Int where T
 
-Structured elimination + ±1 Markowitz loop, with the settings of `config`; returns the number
-of unit pivots. An `OverflowError` (including one coming from a parallel task) becomes a
-[`CoefficientOverflowError`](@ref) naming `T`; `M` is then inconsistent and must not be used any
-more (the widening restarts from the input). `stats` receives the counters, the times (in
-seconds), `unit_pivots` and the number of workers of this reduction; `trace`, the trajectory
-fingerprint; `probe`, a function of no argument, is called after each Markowitz pivot
-(diagnostics).
+Structured elimination + ±1 Markowitz loop, with the settings of `config`; returns the number of unit pivots. An `OverflowError` (including one coming from a parallel task) becomes a [`CoefficientOverflowError`](@ref) naming `T`; `M` is then inconsistent and must not be used any more (the widening restarts from the input). `stats` receives the counters, the times (in seconds), `unit_pivots` and the number of workers of this reduction; `trace`, the trajectory fingerprint; `probe`, a function of no argument, is called after each Markowitz pivot (diagnostics).
 """
-function reduce_to_core!(M::DualSparseMatrix{T};
-                         config::ReductionConfig = ReductionConfig(),
-                         trace::Union{Nothing, ReductionTrace} = nothing,
-                         stats::Union{Nothing, ReductionStats} = nothing,
-                         probe = nothing)::Int where {T}
+function reduce_to_core!(
+    M::DualSparseMatrix{T};
+    config::ReductionConfig = ReductionConfig(),
+    trace::Union{Nothing, ReductionTrace} = nothing,
+    stats::Union{Nothing, ReductionStats} = nothing,
+    probe = nothing
+    )::Int where T
+    
     wsp = ReductionWorkspace{T}(config)
     stats === nothing || (stats.nworkers = wsp.nw)
     total_ones = 0
@@ -1505,21 +1461,17 @@ function _core_dims(M::DualSparseMatrix)
 end
 
 """
-    _reduce_and_divisors!(M; config = ReductionConfig(), trace = nothing, stats = nothing,
-                          probe = nothing, verbose = false)
+    _reduce_and_divisors!(M::DualSparseMatrix; config = ReductionConfig(), trace = nothing, stats = nothing, probe = nothing, verbose = false)
 
-Reduction (structured elimination + ±1 pivots), then elementary divisors of the core by Hecke,
-in the format given by `config.core_format`: `:sparse` (`SMat`), `:dense` (Flint `ZZMatrix`),
-`:auto` (dense if the density of the core is at least `config.dense_min_density` and
-`8 × rows × columns ≤ config.dense_max_bytes`, sparse otherwise). The result is the same in all
-cases. `stats` also receives the size, format and time of the core; `verbose = true` prints the
-size and format of the core.
+Reduction (structured elimination + ±1 pivots), then elementary divisors of the core by Hecke, in the format given by `config.core_format`: `:sparse` (`SMat`), `:dense` (Flint `ZZMatrix`), `:auto` (dense if the density of the core is at least `config.dense_min_density` and `8 × rows × columns ≤ config.dense_max_bytes`, sparse otherwise). The result is the same in all cases. `stats` also receives the size, format and time of the core; `verbose = true` prints the size and format of the core.
 """
-function _reduce_and_divisors!(M::DualSparseMatrix;
-                               config::ReductionConfig = ReductionConfig(),
-                               trace::Union{Nothing, ReductionTrace} = nothing,
-                               stats::Union{Nothing, ReductionStats} = nothing,
-                               probe = nothing, verbose::Bool = false)
+function _reduce_and_divisors!(
+    M::DualSparseMatrix;
+    config::ReductionConfig = ReductionConfig(),
+    trace::Union{Nothing, ReductionTrace} = nothing,
+    stats::Union{Nothing, ReductionStats} = nothing,
+    probe = nothing, verbose::Bool = false)
+    
     n_ones = reduce_to_core!(M; config, trace, stats, probe)
 
     nr, nc, nnz = _core_dims(M)
@@ -1564,23 +1516,30 @@ function _record_failure!(stats::ReductionStats, T, e::CoefficientOverflowError,
 end
 
 """
-    _reduce_and_divisors_widening(rows_data, m, n, value_types; config = ReductionConfig(),
-                                  trace = nothing, stats = nothing, probe = nothing,
-                                  verbose = false)
+    _reduce_and_divisors_widening(
+        rows_data::RowsData{<:Integer}, 
+        m::Int, 
+        n::Int, 
+        value_types; 
+        config = ReductionConfig(),
+        trace = nothing, 
+        stats = nothing, 
+        probe = nothing,
+        verbose = false)
 
-`_reduce_and_divisors` with each type of `value_types` in turn, from the input, until one
-does not overflow (the widening of v0.1.1). The trace and the counters of `stats`
-are reset at the start of each attempt, so that they describe the attempt that succeeds
-(the choice of the pivots does not depend on the type: the trajectory is that of a direct
-computation with the type retained); `stats` also receives that type and the failed
-attempts, the last one included when its overflow is rethrown. The retry happens outside
-the `catch` block, so that nothing of a failed attempt stays reachable.
+`_reduce_and_divisors` with each type of `value_types` in turn, from the input, until one does not overflow (the widening of v0.1.1). The trace and the counters of `stats` are reset at the start of each attempt, so that they describe the attempt that succeeds (the choice of the pivots does not depend on the type: the trajectory is that of a direct computation with the type retained); `stats` also receives that type and the failed attempts, the last one included when its overflow is rethrown. The retry happens outside the `catch` block, so that nothing of a failed attempt stays reachable.
 """
-function _reduce_and_divisors_widening(rows_data::RowsData{<:Integer}, m::Int, n::Int, value_types;
-                                       config::ReductionConfig = ReductionConfig(),
-                                       trace::Union{Nothing, ReductionTrace} = nothing,
-                                       stats::Union{Nothing, ReductionStats} = nothing,
-                                       probe = nothing, verbose::Bool = false)
+function _reduce_and_divisors_widening(
+    rows_data::RowsData{<:Integer}, 
+    m::Int, 
+    n::Int, 
+    value_types;
+    config::ReductionConfig = ReductionConfig(),
+    trace::Union{Nothing, ReductionTrace} = nothing,
+    stats::Union{Nothing, ReductionStats} = nothing,
+    probe = nothing, 
+    verbose::Bool = false)
+    
     stats === nothing || _reset!(stats)
     k = length(value_types)
     for (i, T) ∈ enumerate(value_types)
@@ -1616,9 +1575,7 @@ end
 
 # Motivation (ZT2w4m5 d₄): core 9351×25417, nnz = 130 M; extraction to a Hecke `SMat` took 422 s (as long as the whole reduction), i.e. ~3.2 µs/entry versus ~0.25 µs/entry on G₃₇ d₅ (nnz = 2.7 M). Probable cause (not proven): GC pressure (one `ZZRingElem` and one intermediate tuple allocated per entry, pointer vectors to traverse). The dense extraction below avoids these costs; it does not change the result of the reduction.
 
-# A core coefficient for Flint: an Int when it fits a machine word (no allocation; for a
-# ZZRingElem, Hecke.ZZ(::Int) avoids the BigInt that Hecke.ZZ(::Int32) goes through), a
-# ZZRingElem otherwise. Int(v) on an Int128 beyond Int64 was the InexactError of v0.1.0.
+# A core coefficient for Flint: an Int when it fits a machine word (no allocation; for a ZZRingElem, Hecke.ZZ(::Int) avoids the BigInt that Hecke.ZZ(::Int32) goes through), a ZZRingElem otherwise. Int(v) on an Int128 beyond Int64 was the InexactError of v0.1.0.
 @inline _to_zz(v::Union{Int8, Int16, Int32, Int64}) = Int(v)
 @inline _to_zz(v::Int128) = typemin(Int) <= v <= typemax(Int) ? Int(v) : Hecke.ZZ(v)
 @inline _to_zz(v::Integer) = Hecke.ZZ(v)
@@ -1636,7 +1593,7 @@ end
 """
     extract_core_dense(M) -> ZZMatrix
 
-The core (active rows × active columns, same numbering) as a DENSE Flint matrix: a single C allocation, no per-entry `ZZRingElem` object on the Julia GC side. Memory cost: 8 bytes × rows × columns (ZT2w4m5 d₄: 9351×25417 ≈ 1.9 GiB if the entries fit in a machine word).
+Extract the core (active rows × active columns, same numbering) as a dense Flint matrix: a single C allocation, no per-entry `ZZRingElem` object on the Julia GC side. Memory cost: 8 bytes × rows × columns (ZT2w4m5 d₄: 9351×25417 ≈ 1.9 GiB if the entries fit in a machine word).
 """
 function extract_core_dense(M::DualSparseMatrix)
     active_rows, active_cols, col_inverse = _core_index_maps(M)
