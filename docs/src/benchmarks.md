@@ -5,7 +5,7 @@ Times for the complete computation of the elementary divisors (for SparseElement
 - SparseElementaryDivisors: Intel Core Ultra 9 285 vPro, 128 GB;
 - Magma (with Magma's own timing of `ElementaryDivisors`): Intel Xeon Gold 5222, 64 GB.
 
-The times are only indicative: the test matrices are not distributed with the package (this may change), and the machines are not exactly comparable. The matrices are differentials of a reduced version of Dehornoy–Lafont's resolution (see the [Bibliography](bibliography.md)) for the dual braid monoid of the complex reflection group G₃₇, produced by the preliminary implementation of [GarsideHomology.jl](https://github.com/yvesguiraud/GarsideHomology.jl), and a family ZT2w4m5 of examples provided by Najib Idrissi (see the [acknowledgements](@ref acknowledgements)).
+The times are only indicative: the test matrices are not distributed with the package (this may change), and the machines are not exactly comparable. The matrices are the differentials of the reduced lcm resolution of the dual braid monoid of the complex reflection group G₃₇ (a variant of Dehornoy–Lafont's resolution with fewer cells, see the [Bibliography](bibliography.md)), produced by the preliminary implementation of [GarsideHomology.jl](https://github.com/yvesguiraud/GarsideHomology.jl), and a family ZT2w4m5 of examples provided by Najib Idrissi (see the [acknowledgements](@ref acknowledgements)).
 
 | Matrix | Size | Hecke | SparseElementaryDivisors | Magma |
 |---|---|---|---|---|

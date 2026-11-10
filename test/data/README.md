@@ -6,8 +6,8 @@ used by `test/test_fingerprints.jl`.
 ## Matrices
 
 - `G34_d<i>.mtx`, `G35_d<i>.mtx`, `G36_d<i>.mtx`: the differentials dᵢ : Cᵢ₊₁ → Cᵢ
-  (rows indexed by Cᵢ) of the integral chain complexes computed by Gauss.jl for the
-  dual braid monoids of the complex reflection groups G₃₄, G₃₅ and G₃₆.
+  (rows indexed by Cᵢ) of the integral chain complexes computed by the preliminary
+  implementation of GarsideHomology.jl for the dual braid monoids of the complex reflection groups G₃₄, G₃₅ and G₃₆.
 - `synth_*.mtx`: synthetic matrices generated once with a fixed seed (the comment line
   of each file describes it). `synth_b_150x200` overflows `Int32` during elimination;
   `synth_snf_100x120` has known elementary divisors; `synth_dense_60x60` has no

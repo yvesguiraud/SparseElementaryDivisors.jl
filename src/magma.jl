@@ -36,7 +36,7 @@ end
                                     connect_timeout = 15)
     timed_magma_elementary_divisors(rows, m, n; kwargs...)
 
-Compute the elementary divisors of `A` with Magma (Bosma, Cannon and Playoust 1997, references in the README), to compare results and timings. Return `(divisors::Vector{BigInt}, t_magma::Float64)`, where `t_magma` is the time measured BY MAGMA for the single call to `ElementaryDivisors` (excluding the connection, the start-up of Magma and the transfer of the matrix; `NaN` if it could not be read). `A` can be of any type accepted by [`sparse_elementary_divisors`](@ref), including a Matrix Market file name.
+Compute the elementary divisors of `A` with Magma (Bosma, Cannon and Playoust 1997, references in the Bibliography of the documentation), to compare results and timings. Return `(divisors::Vector{BigInt}, t_magma::Float64)`, where `t_magma` is the time measured by Magma itself for the single call to `ElementaryDivisors` (excluding the connection, the start-up of Magma and the transfer of the matrix; `NaN` if it could not be read). `A` can be of any type accepted by [`sparse_elementary_divisors`](@ref), including a Matrix Market file name.
 
 Without `ssh_host`, `magma_command` is run locally; otherwise the command is run through `ssh -o ConnectTimeout=… ssh_host magma_command`. The matrix is sent on the standard input.
 
@@ -102,7 +102,7 @@ timed_magma_elementary_divisors(path::AbstractString; kwargs...) =
 """
     magma_elementary_divisors(A; verbose = false, kwargs...)
 
-Non-zero elementary divisors of `A` computed by Magma, as a `Vector{BigInt}` (same result type as [`sparse_elementary_divisors`](@ref)). With `verbose = true`, Magma's own computation time is printed. The other keyword arguments (`ssh_host`, `magma_command`, `connect_timeout`) and the accepted inputs are those of [`timed_magma_elementary_divisors`](@ref), which also returns the time.
+Elementary divisors of `A` computed by Magma, as a `Vector{BigInt}` (same result type as [`sparse_elementary_divisors`](@ref)). With `verbose = true`, Magma's own computation time is printed. The other keyword arguments (`ssh_host`, `magma_command`, `connect_timeout`) and the accepted inputs are those of [`timed_magma_elementary_divisors`](@ref), which also returns the time.
 """
 function magma_elementary_divisors(args...; verbose::Bool = false, kwargs...)
     divs, t = timed_magma_elementary_divisors(args...; kwargs...)

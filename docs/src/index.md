@@ -13,10 +13,10 @@ For every matrix ``A`` over a principal ideal domain ``R``, there exist invertib
 
 ```math
 SAT = \begin{pmatrix} D & 0 \\ 0 & 0 \end{pmatrix},
-\qquad D = \begin{pmatrix} d_1 & & 0 \\ & \ddots & \\ 0 & & d_r \end{pmatrix},
+\qquad D = \begin{pmatrix} e_1 & & 0 \\ & \ddots & \\ 0 & & e_r \end{pmatrix},
 ```
 
-where ``d_1, \dots, d_r`` are non-zero elements of ``R``, and each ``d_i`` divides ``d_{i+1}``; moreover, these diagonal elements are unique up to multiplication by units of ``R``. The diagonal matrix ``SAT`` is called the *Smith normal form* of ``A``, and ``d_1, \dots, d_r`` are called the *elementary divisors* (or *invariant factors*) of ``A``.
+where ``e_1, \dots, e_r`` are non-zero elements of ``R``, and each ``e_i`` divides ``e_{i+1}``; moreover, these diagonal elements are unique up to multiplication by units of ``R``. The diagonal matrix ``SAT`` is called the *Smith normal form* of ``A``, and ``e_1, \dots, e_r`` are called the *elementary divisors* (or *invariant factors*) of ``A``.
 
 A common use of elementary divisors is the computation of homology groups. For example, consider a complex
 
@@ -24,10 +24,10 @@ A common use of elementary divisors is the computation of homology groups. For e
 \mathbb{Z}^m \xrightarrow{f} \mathbb{Z}^n \xrightarrow{g} \mathbb{Z}^p,
 ```
 
-that is, with ``gf = 0``. Let ``r`` and ``s`` be the respective ranks of ``f`` and ``g``, and ``d_1, \dots, d_r`` be the elementary divisors of ``f``. Then the homology of the complex at the middle term is
+that is, with ``gf = 0``. Let ``r`` and ``s`` be the respective ranks of ``f`` and ``g``, and ``e_1, \dots, e_r`` be the elementary divisors of ``f``. Then the homology of the complex at the middle term is
 
 ```math
-\ker g / \operatorname{im} f \;\cong\; \mathbb{Z}^{\,n - r - s} \oplus \bigoplus_{i=1}^{r} \mathbb{Z}/d_i\mathbb{Z}.
+\ker g / \operatorname{im} f \;\cong\; \mathbb{Z}^{\,n - r - s} \oplus \bigoplus_{i=1}^{r} \mathbb{Z}/e_i\mathbb{Z}.
 ```
 
 ### Computation method

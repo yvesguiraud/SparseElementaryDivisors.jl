@@ -4,7 +4,7 @@
 """
     read_matrix_market(path_or_io) -> SparseMatrixCSC{Int,Int}
 
-Read a matrix in [Matrix Market](https://math.nist.gov/MatrixMarket/formats.html) format (Boisvert, Pozo and Remington 1996, references in the README): `coordinate` (the format suited to sparse matrices) or `array`, of type `integer` or `pattern` (all entries equal to 1); `real` is accepted if all values are integers. The symmetry can be `general`, `symmetric` or `skew-symmetric` (the latter two for `coordinate` only). Comment lines (`%`) are ignored. The values are read as `Int`: an entry beyond a machine word raises an error. See also [`write_matrix_market`](@ref).
+Read a matrix in [Matrix Market](https://math.nist.gov/MatrixMarket/formats.html) format (Boisvert, Pozo and Remington 1996, references in the Bibliography of the documentation): `coordinate` (the format suited to sparse matrices) or `array`, of type `integer` or `pattern` (all entries equal to 1); `real` is accepted if all values are integers. The symmetry can be `general`, `symmetric` or `skew-symmetric` (the latter two for `coordinate` only). Comment lines (`%`) are ignored. The values are read as `Int`: an entry beyond a machine word raises an error. See also [`write_matrix_market`](@ref).
 """
 function read_matrix_market(io::IO)
     header = readline(io)

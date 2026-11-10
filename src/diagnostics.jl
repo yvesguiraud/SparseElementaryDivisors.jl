@@ -108,7 +108,7 @@ end
 ### Pivot search cost diagnostic ###
 ####################################
 
-# `diagnostic_pivot_search` reproduces EXACTLY the search (not the fill-in) of `markowitz_pivot!`; WITHOUT ANY MUTATION of `M`. `diagnose_pivot_search_cost` calls it just BEFORE the actual pivot step at each iteration: since `M` is unchanged between the two calls, both searches find the same pivot, so the mathematical result and the pivoting trajectory are EXACTLY those of a normal run with these settings; only the search is done twice (diagnostic cost ≈ 2× the search cost alone, NOT 2× the total cost). The returned NamedTuples record `n_scanned` and respect `max_buckets_scanned`.
+# `diagnostic_pivot_search` reproduces exactly the search (not the fill-in) of `markowitz_pivot!`, without any mutation of `M`. `diagnose_pivot_search_cost` calls it just before the actual pivot step at each iteration: since `M` is unchanged between the two calls, both searches find the same pivot, so the mathematical result and the pivoting trajectory are exactly those of a normal run with these settings; only the search is done twice (diagnostic cost ≈ 2× the search cost alone, not 2× the total cost). The returned NamedTuples record `n_scanned` and respect `max_buckets_scanned`.
 
 function diagnostic_pivot_search(M::DualSparseMatrix{T};
                                   config::ReductionConfig = ReductionConfig()) where {T}
@@ -200,9 +200,9 @@ end
 """
     diagnose_pivot_search_cost(M; config = ReductionConfig())
 
-Run the complete reduction (structured elimination + Markowitz), doubling the pivot search at each iteration with `diagnostic_pivot_search` (read-only) to collect, FOR EACH MARKOWITZ PIVOT ACTUALLY APPLIED, its final score, `n_scanned`, `n_buckets_scanned`, and whether the search stopped by early break or by exhaustion (bucket or cap). MUTATES `M` — pass a copy (`deepcopy(M)`) to keep the original.
+Run the complete reduction (structured elimination + Markowitz), doubling the pivot search at each iteration with `diagnostic_pivot_search` (read-only) to collect, for each Markowitz pivot actually applied, its final score, `n_scanned`, `n_buckets_scanned`, and whether the search stopped by early break or by exhaustion (bucket or cap). Mutates `M`: pass a copy (`deepcopy(M)`) to keep the original.
 
-Returns a `Vector{<:NamedTuple}`, to be summarized with `summarize_pivot_search_diag`.
+Returns a `Vector{<:NamedTuple}`, to be summarised with `summarize_pivot_search_diag`.
 """
 function diagnose_pivot_search_cost(M::DualSparseMatrix{T};
                                      config::ReductionConfig = ReductionConfig()) where {T}
@@ -287,7 +287,7 @@ end
 """
     sweep_search_params(M, configs)
 
-Sweep several combinations `(acceptable_score_threshold, max_buckets_scanned)` (`configs` is a `Vector{Tuple{Int,Int}}`) on a COPY of `M` for each configuration. No `@btime`/`@benchmark` here. For each configuration, records:
+Sweep several combinations `(acceptable_score_threshold, max_buckets_scanned)` (`configs` is a `Vector{Tuple{Int,Int}}`) on a copy of `M` for each configuration. No `@btime`/`@benchmark` here. For each configuration, records:
   - the search cost (`total_scanned` / `total_buckets_scanned`);
   - the size of the final residual core (`core_nrows` / `core_ncols` / `core_nnz`);
   - the final divisors, to check that results agree between configurations.
@@ -354,5 +354,5 @@ function sweep_search_params(M::DualSparseMatrix, configs::Vector{Tuple{Int,Int}
     return results
 end
 
-# NOT INCLUDED (to be added if really needed): the fill-in size collection and summary tools. To judge the fill-in quality of a configuration (threshold, max_buckets_scanned), the size of the final residual core (core_nrows / core_ncols / core_nnz, already reported by `sweep_search_params`) is enough.
+# Not included (to be added if really needed): the fill-in size collection and summary tools. To judge the fill-in quality of a configuration (threshold, max_buckets_scanned), the size of the final residual core (core_nrows / core_ncols / core_nnz, already reported by `sweep_search_params`) is enough.
 

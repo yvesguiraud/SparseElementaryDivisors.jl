@@ -3,9 +3,11 @@
 
 Elementary divisors (Smith normal form invariants) of large **sparse integer matrices**, by exact sparse elimination (unit pivots with Markowitz-style ordering, parallel pivot search and fill-in) followed by Hecke's `elementary_divisors` on the small remaining core.
 
-References (details in the README): Markowitz (1957) for the pivot score; LaMacchia and Odlyzko (1991) for the structured elimination; Dumas, Saunders and Villard (2001) on the Smith normal form of large sparse integer matrices; Fieker, Hart, Hofmann and Johansson (2017) for Hecke, with FLINT.
+References (details in the Bibliography of the documentation): Markowitz (1957) for the pivot score; LaMacchia and Odlyzko (1991) for the structured elimination; Dumas, Saunders and Villard (2001) on the Smith normal form of large sparse integer matrices; Fieker, Hart, Hofmann and Johansson (2017) for Hecke, with FLINT.
 
 Main entry point: [`sparse_elementary_divisors`](@ref), with its settings [`ReductionConfig`](@ref) and its statistics [`ReductionStats`](@ref). See also [`read_matrix_market`](@ref), [`write_matrix_market`](@ref) and [`magma_elementary_divisors`](@ref) (comparison with Magma, requires a Magma installation).
+
+Documentation: https://yvesguiraud.github.io/SparseElementaryDivisors.jl/stable/
 """
 module SparseElementaryDivisors
 

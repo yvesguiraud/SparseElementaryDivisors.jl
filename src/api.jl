@@ -4,10 +4,11 @@
     SparseElementaryDivisors.DEFAULT_VALUE_TYPES
 
 The sequence of integer types tried by `value_type = :auto`, in increasing width:
-`(Int32, Int64, Int128, BigInt)`. Int32 comes first because it saves time and memory on
-large matrices (B*(G₃₇) in trivial coefficients: 20 % of the time, 17 % of the peak memory
-against Int64), and its failed attempts cost little when the coefficients grow (their
-overflow comes early).
+`(Int32, Int64, Int128, BigInt)`. `Int32` comes first because it saves time and memory on
+large matrices (on the differentials of the dual braid monoid of G₃₇, in trivial
+coefficients, it saves 20% of the time and 17% of the peak memory compared with `Int64`),
+and its failed attempts cost little when the coefficients grow (their overflow comes
+early).
 """
 const DEFAULT_VALUE_TYPES = (Int32, Int64, Int128, BigInt)
 
@@ -90,7 +91,7 @@ function _check_rows(rows::RowsData{V}, m::Int, n::Int) where {V<:Integer}
     return found ? (lo = (lo_r, lo_c, lo_v), hi = (hi_r, hi_c, hi_v)) : nothing
 end
 
-# Values of the rows (option A of s3): Int when every entry fits a machine word, BigInt
+# Values of the rows: Int when every entry fits a machine word, BigInt
 # otherwise (the conversions below then pass the type to a function barrier).
 _fits_int(v) = typemin(Int) <= v <= typemax(Int)
 
@@ -155,7 +156,7 @@ end
     sparse_elementary_divisors(m, n, rows; kwargs...)
     sparse_elementary_divisors(path::AbstractString; kwargs...)
 
-Non-zero elementary divisors of the integer matrix `A`, in increasing order: a `Vector{BigInt}` with `d[i] ∣ d[i+1]`.
+Elementary divisors of the integer matrix `A` (the non-zero diagonal entries of its Smith normal form), in increasing order: a `Vector{BigInt}` with `d[i] ∣ d[i+1]`.
 
 `A` can be a `SparseMatrixCSC` (fast path), any other `AbstractSparseMatrix` or `AbstractMatrix{<:Integer}` (converted), a Hecke matrix (`Hecke.SMat{ZZRingElem}` or `Hecke.ZZMatrix`), or the matrix given row by row: `rows[r]` is the vector of `(column, value)` pairs of row `r`, with columns in `1:n` and strictly increasing, for an `m × n` matrix (zero values are allowed and ignored; values of any integer type, entries beyond a machine word included). The input is checked before the computation: an `ArgumentError` names the first fault (column out of range, unsorted or repeated column, wrong number of rows); unsorted triplets go through `sparse(I, J, V)`, which sorts them and sums duplicates. With a file name, the matrix is read in Matrix Market format (see [`read_matrix_market`](@ref)).
 
@@ -167,7 +168,7 @@ Non-zero elementary divisors of the integer matrix `A`, in increasing order: a `
 
 Developer tools: `trace`, a `SparseElementaryDivisors.ReductionTrace` (trajectory fingerprint of the attempt retained), and `probe`, a function of no argument called after each Markowitz pivot.
 
-Method: a structured elimination (LaMacchia and Odlyzko 1991) pivots on the rows and columns of degree one whose entry is ±1; then each step pivots on a ±1 entry of small Markowitz score (r − 1)(c − 1) (Markowitz 1957), r and c being the numbers of entries of its row and column, and the structured elimination runs again. Each ±1 pivot gives an elementary divisor 1; the core that remains, with no ±1 entry left, goes to `Hecke.elementary_divisors` (Fieker, Hart, Hofmann and Johansson 2017; FLINT). On the Smith normal form of large sparse integer matrices, in particular from homology, see Dumas, Saunders and Villard (2001). References in the README.
+Method: a structured elimination (LaMacchia and Odlyzko 1991) pivots on the rows and columns of degree one whose entry is ±1; then each step pivots on a ±1 entry of small Markowitz score (r − 1)(c − 1) (Markowitz 1957), r and c being the numbers of entries of its row and column, and the structured elimination runs again. Each ±1 pivot gives an elementary divisor 1; the core that remains, with no ±1 entry left, goes to `Hecke.elementary_divisors` (Fieker, Hart, Hofmann and Johansson 2017; FLINT). On the Smith normal form of large sparse integer matrices, in particular from homology, see Dumas, Saunders and Villard (2001). References in the Bibliography of the documentation.
 """
 function sparse_elementary_divisors(rows::RowsData{<:Integer}, m::Int, n::Int;
                                     value_type = :auto,

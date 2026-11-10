@@ -71,7 +71,7 @@ end
 """
     update_degrees!(db, i, new_d)
 
-Move entity `i` to the bucket matching its new degree `new_d`, if the degree changed bucket. Amortized O(1) cost.
+Move entity `i` to the bucket matching its new degree `new_d`, if the degree changed bucket. Amortised O(1) cost.
 """
 function update_degrees!(db::DegreeBuckets, i::Int, new_d::Int)
     new_bidx = degree_to_bucket_idx(db, new_d)
@@ -345,7 +345,7 @@ end
 """
     _ensure_capacity!(buf, needed)
 
-Ensure `length(buf) >= needed`, with amortized doubling.
+Ensure `length(buf) >= needed`, with amortised doubling.
 """
 @inline function _ensure_capacity!(buf::Vector{T}, needed::Int) where {T}
     if length(buf) < needed
@@ -368,7 +368,7 @@ end
 
 Sorted merge in O(n_old + n_new), written into the shared scratch buffer (`M._merge_cols_buf` / `M._merge_vals_buf`), then copied into `row_cols[sr]` / `row_vals[sr]`. Checked arithmetic (`_sub_mul` / `_neg_mul`). `release`: the setting `release_empty_vectors` of [`ReductionConfig`](@ref) (a row that becomes empty gets fresh vectors, which frees its capacity).
 
-⚠️ NO guarantee of non-mutation on overflow: `M` MUST be abandoned entirely as soon as an `OverflowError` is raised here, never reused — this is what `reduce_to_core!` guarantees.
+⚠️ No guarantee of non-mutation on overflow: `M` must be abandoned entirely as soon as an `OverflowError` is raised here, never reused — this is what `reduce_to_core!` guarantees.
 """
 function merge_row!(M::DualSparseMatrix{T}, sr::Int, skip_col::Int,
                            new_cols::Vector{Int}, new_vals::Vector{T}, factor::T,
@@ -708,9 +708,9 @@ Parallelism (the result does not depend on it, bit for bit):
   `search_parallel_min_work` entries, without the cost rule);
 - `search_parallel_min_work = 5000`: floor of the `:auto` rule, in bucket entries;
 - `search_ns_per_entry = 8.0`, `parallel_fixed_cost_ns = 50_000.0`,
-  `apply_parallel_penalty = 0.1`: constants of the `:auto` rule, calibrated on N8 (24 threads):
-  a bucket of `e` entries is scanned in parallel when the saving
-  `e · search_ns_per_entry · (1 - 1/nworkers)` exceeds
+  `apply_parallel_penalty = 0.1`: constants of the `:auto` rule, calibrated on a 24-thread
+  workstation (Intel Core Ultra 9 285): a bucket of `e` entries is scanned in parallel when
+  the saving `e · search_ns_per_entry · (1 - 1/nworkers)` exceeds
   `parallel_fixed_cost_ns + apply_parallel_penalty · (recent application time in ns)`;
 - `apply_ema_alpha = 0.05`: weight of the moving average of the application time, in
   `(0, 1]`;
@@ -728,9 +728,8 @@ Core (what the elimination leaves, passed to Hecke):
 Memory:
 - `release_empty_vectors = false`: if `true`, a row or column that becomes empty during a merge
   gets fresh vectors, which frees its capacity (by default its vectors are emptied and keep their
-  capacity). On Windows, this reduced the heap of ZT2w4m5 d₄ from 22 to 9 GiB but made the end
-  of the reduction twice as slow (garbage collection 443 to 460 s instead of about 44 s; total
-  about 860 to 890 s instead of 434 s); not measured on Linux yet.
+  capacity). On Windows, this reduced the heap of ZT2w4m5 d₄ from 22 to 9 GiB, but about
+  doubled the total time (garbage collection); not measured on Linux yet.
 """
 struct ReductionConfig
     acceptable_score_threshold::Int
@@ -834,7 +833,7 @@ end
 mutable struct SearchWorkspace
     cap::Int
     status::Vector{Int8}      # 0 = chunk not processed, 1 = processed
-    good::Vector{Bool}        # the chunk reached the threshold (min_* = its FIRST candidate <= threshold)
+    good::Vector{Bool}        # the chunk reached the threshold (min_* = its first candidate <= threshold)
     min_score::Vector{Int}
     min_r::Vector{Int}
     min_c::Vector{Int}
@@ -890,7 +889,7 @@ end
 """
     _parallel_dynamic!(body, n, nw, chunk)
 
-Run `body(t, w)` for t ∈ 1:n on `nw` workers (w ∈ 1:nw; the calling thread is worker 1), dynamic distribution by chunks of `chunk` elements (atomic counter). `w` is assigned HERE (stable for the task): safe to index private buffers even if tasks migrate.
+Run `body(t, w)` for t ∈ 1:n on `nw` workers (w ∈ 1:nw; the calling thread is worker 1), dynamic distribution by chunks of `chunk` elements (atomic counter). `w` is assigned here (stable for the task): safe to index private buffers even if tasks migrate.
 
 Exception robustness: each worker catches the exception, stores it (only the first) and raises a stop flag checked by the others between two chunks; ALL tasks are awaited, then the original exception is rethrown by the caller (never a `TaskFailedException`).
 """
@@ -1391,7 +1390,7 @@ function markowitz_pivot!(M::DualSparseMatrix{T};
     end
 
     # --- Cleanup.
-    # Pivot row and column: REPLACE them by fresh empty vectors instead of `empty!`, which would
+    # Pivot row and column: replace them by fresh empty vectors instead of `empty!`, which would
     # keep all the allocated capacity (ZT2w4m5 d₄: 21 GiB of capacity for 2.9 GiB of content,
     # 43 s of GC). No alias exists after Phase 0 (the pivot buffers are copies).
     M.row_cols[p_r] = Int[]; M.row_vals[p_r] = T[]
@@ -1448,7 +1447,7 @@ end
 
 Structured elimination + ±1 Markowitz loop, with the settings of `config`; returns the number
 of unit pivots. An `OverflowError` (including one coming from a parallel task) becomes a
-[`CoefficientOverflowError`](@ref) naming `T`; `M` is then inconsistent and MUST NOT be used any
+[`CoefficientOverflowError`](@ref) naming `T`; `M` is then inconsistent and must not be used any
 more (the widening restarts from the input). `stats` receives the counters, the times (in
 seconds), `unit_pivots` and the number of workers of this reduction; `trace`, the trajectory
 fingerprint; `probe`, a function of no argument, is called after each Markowitz pivot
@@ -1570,7 +1569,7 @@ end
                                   verbose = false)
 
 `_reduce_and_divisors` with each type of `value_types` in turn, from the input, until one
-does not overflow (steps 2a and 2b of s3, v0.1.1). The trace and the counters of `stats`
+does not overflow (the widening of v0.1.1). The trace and the counters of `stats`
 are reset at the start of each attempt, so that they describe the attempt that succeeds
 (the choice of the pivots does not depend on the type: the trajectory is that of a direct
 computation with the type retained); `stats` also receives that type and the failed

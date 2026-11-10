@@ -4,17 +4,18 @@
 CurrentModule = SparseElementaryDivisors
 ```
 
-This page explains how to call [`sparse_elementary_divisors`](@ref) and what its options do; the complete descriptions are in the [Reference manual](reference_manual.md).
+This page explains how to call [`sparse_elementary_divisors`](@ref) and what its options do. The complete descriptions are in the [Reference manual](reference_manual.md).
 
 ## Input
 
 The matrix can be given as:
-- a `SparseMatrixCSC` with integer entries (the fastest path), or any other `AbstractSparseMatrix` or `AbstractMatrix{<:Integer}`, which is converted first (dense matrices, adjoints and views work, but are not efficient);
+- a `SparseMatrixCSC` with integer entries (the fastest path);
+- any other `AbstractSparseMatrix` or `AbstractMatrix{<:Integer}` (dense matrices, adjoints and views included), which the package first converts to a `SparseMatrixCSC`, a less efficient path;
 - a Hecke matrix, `Hecke.SMat{ZZRingElem}` or `Hecke.ZZMatrix`;
-- rows given one by one, `rows[r] = [(column, value), ...]` with the columns strictly increasing, together with the size of the matrix: `sparse_elementary_divisors(rows, m, n)` or `sparse_elementary_divisors(m, n, rows)` (see [`RowsData`](@ref SparseElementaryDivisors.RowsData));
+- rows given one by one, `rows[r] = [(column, value), ...]` with the columns strictly increasing, together with the size of the matrix, as in `sparse_elementary_divisors(rows, m, n)` or `sparse_elementary_divisors(m, n, rows)` (see [`RowsData`](@ref SparseElementaryDivisors.RowsData));
 - the name of a file in Matrix Market format (see [Matrix Market files](@ref matrix-market) below).
 
-Entries of any integer type are accepted, including entries beyond a machine word (`BigInt`, `ZZRingElem`). Rows given one by one are checked before the computation: an `ArgumentError` names the first fault (column out of range, unsorted or repeated column, wrong number of rows). Unsorted triplets `(i, j, v)` can go through `sparse(I, J, V)` of SparseArrays, which sorts them and sums the duplicates.
+Entries of any integer type are accepted, including `BigInt` and `ZZRingElem`. Rows given one by one are checked before the computation: an `ArgumentError` names the first fault (column out of range, unsorted or repeated column, wrong number of rows). Unsorted triplets `(i, j, v)` can go through `sparse(I, J, V)` of SparseArrays, which sorts them and applies a combine function to the duplicates (sum by default).
 
 ## Result
 
@@ -25,24 +26,31 @@ A = sparse([2 0 0; 0 3 0; 0 0 0])
 d = sparse_elementary_divisors(A)    # BigInt[1, 6]
 ```
 
-The result is the vector of the non-zero elementary divisors, in increasing order, each one dividing the next: here `A` is equivalent to the diagonal matrix with entries 1, 6 and 0. Its length is the rank of the matrix; the remaining `min(m, n) - length(d)` elementary divisors are zero.
+The result is the vector of the elementary divisors of `A`, in increasing order, each one dividing the next: here the Smith normal form of `A` is the diagonal matrix with entries 1, 6 and 0. The length of the returned vector is the rank of the matrix.
 
-In a homology computation, with differentials ``d_n : C_{n+1} \to C_n``, the homology in degree ``n`` is ``\mathbb{Z}^{b} \oplus \bigoplus_i \mathbb{Z}/e_i\mathbb{Z}``, where ``b = \operatorname{rank} C_n - \operatorname{rank} d_{n-1} - \operatorname{rank} d_n`` and the ``e_i`` are the elementary divisors of ``d_n`` greater than 1.
+Elementary divisors give the homology of chain complexes of free abelian groups of finite rank. Consider such a complex
+
+```math
+\cdots \longrightarrow C_{n+1} \xrightarrow{d_n} C_n \xrightarrow{d_{n-1}} C_{n-1} \longrightarrow \cdots
+```
+
+whose differentials are given by their matrices in some bases. If ``c_n`` is the rank of ``C_n`` and ``e_1, \dots, e_{k_n}`` are the elementary divisors of ``d_n`` (so that ``k_n`` is the rank of ``d_n``), the homology in degree ``n`` is
+
+```math
+H_n(C_\bullet) = \ker d_{n-1} / \operatorname{im} d_n \;\cong\; \mathbb{Z}^{\,c_n - k_{n-1} - k_n} \oplus \bigoplus_{i=1}^{k_n} \mathbb{Z}/e_i\mathbb{Z}.
+```
+
+Note that the elementary divisors equal to 1 give trivial summands.
 
 ## Threads
 
-The pivot search and the application of the pivots run in parallel when Julia is started with several threads: `julia -t auto`, or `julia -t 16`. The keyword `nworkers` sets the number of parallel tasks, the calling thread included (by default `Threads.nthreads()`); it can be lowered on a shared machine, or for small matrices, where the parallel steps do not pay off. The pivots are chosen in the same order whatever the number of workers, so that the result does not depend on it.
+The pivot search and the application of the pivots run in parallel when Julia is started with several threads: `julia -t auto`, or `julia -t 16`. The keyword `nworkers` of `sparse_elementary_divisors` sets the number of parallel tasks, including the calling thread (by default `Threads.nthreads()`); it can be lowered on a shared machine, or for small matrices, where the parallel steps do not pay off. The pivots are chosen in the same order whatever the number of workers, so that the result does not depend on it.
 
 ## Integer types
 
-During the elimination, the coefficients are machine integers with checked arithmetic. With the default `value_type = :auto`, the types of [`DEFAULT_VALUE_TYPES`](@ref SparseElementaryDivisors.DEFAULT_VALUE_TYPES), `(Int32, Int64, Int128, BigInt)`, are tried in turn, starting with the first one that holds all the entries; after an overflow, the computation restarts from the input with the next type. Each call is independent: a failed attempt costs its own time, and the next matrix starts again from the first type that holds its entries. Wider types cost more time and memory, `BigInt` much more, hence the order.
+During the elimination, the coefficients are machine integers with checked arithmetic. With the default `value_type = :auto`, the types of [`DEFAULT_VALUE_TYPES`](@ref SparseElementaryDivisors.DEFAULT_VALUE_TYPES), `(Int32, Int64, Int128, BigInt)`, are tried in turn, starting with the first one that holds all the entries; after an overflow, the computation restarts from the input with the next type. Each call is independent: a failed attempt costs its own time, and the next matrix starts again from the first type that holds its entries. Wider types cost more time and memory, `BigInt` being much more expensive.
 
 ```julia
-st = ReductionStats()
-sparse_elementary_divisors(A; stats = st)
-st.value_type          # the type retained
-st.failed_attempts     # the attempts that overflowed: (type, unit pivots, seconds)
-
 sparse_elementary_divisors(A; value_type = Int64)             # Int64 only
 sparse_elementary_divisors(A; value_type = (Int64, Int128))   # Int64, then Int128
 ```
@@ -51,7 +59,7 @@ A fixed type or a sequence restricts the choice; a [`CoefficientOverflowError`](
 
 ## Settings
 
-The settings of the reduction are gathered in a [`ReductionConfig`](@ref), an immutable value that can be kept and reused, for instance for all the differentials of a complex. Each of its fields can also be given directly as a keyword of `sparse_elementary_divisors`, and then takes precedence over `config`; an unknown keyword raises an `ArgumentError`.
+The settings of the reduction are gathered in a [`ReductionConfig`](@ref), an immutable value that can be kept and reused, for instance for all the differentials of a complex. Each of its fields can also be given directly as a keyword of `sparse_elementary_divisors`, which takes precedence over a configuration; an unknown keyword raises an `ArgumentError`.
 
 ```julia
 cfg = ReductionConfig(nworkers = 4, core_format = :sparse)
@@ -59,7 +67,7 @@ sparse_elementary_divisors(A; config = cfg)
 sparse_elementary_divisors(A; config = cfg, nworkers = 1)     # nworkers = 1 wins
 ```
 
-No setting changes the elementary divisors. The parameters of the pivot search change the order of the pivots, hence the time, the fill-in and the size of the coefficients; the other settings only change how the work is done. The default values come from measurements on matrices like those of the [Benchmarks](benchmarks.md). Besides `nworkers`, the setting most often useful is `core_format`, the format of the core passed to Hecke: `:sparse`, `:dense`, or `:auto`, which chooses from the density and the size of the core.
+The parameters of the pivot search change the order of the pivots, hence the time, the fill-in and the size of the coefficients; the other settings only change how the work is done. The default values come from measurements on matrices like those of the [Benchmarks](benchmarks.md). Besides `nworkers`, the setting most often useful is `core_format`, the format of the core passed to Hecke: `:sparse`, `:dense`, or `:auto` (which chooses between sparse and dense, depending on the density and the size of the core).
 
 ## Statistics
 
@@ -68,6 +76,8 @@ A [`ReductionStats`](@ref) passed with the keyword `stats` is filled in place: t
 ```julia
 st = ReductionStats()
 sparse_elementary_divisors(A; stats = st, verbose = true)
+st.value_type          # the type retained
+st.failed_attempts     # the attempts that overflowed: (type, unit pivots, seconds)
 st.unit_pivots, st.core_size, st.core_format
 ```
 
@@ -98,4 +108,4 @@ The matrix is stored both by rows and by columns, and reduced in three steps:
 2. each following step chooses an entry ±1 of small Markowitz score ``(r - 1)(c - 1)``, where ``r`` and ``c`` are the numbers of entries of its row and of its column, eliminates its row and its column, and runs the structured elimination again;
 3. when no entry ±1 is left, the remaining matrix, the core, goes to `Hecke.elementary_divisors` (Hecke and Nemo, on FLINT), as a sparse or a dense matrix.
 
-Each pivot ±1 gives an elementary divisor 1. The method suits matrices with many entries ±1 and few entries per row and column, such as the differentials of resolutions, where the core is small. When few pivots ±1 are available, most of the work is done by Hecke on a large core. The articles behind these steps are listed in the [Bibliography](bibliography.md).
+Each pivot ±1 gives an elementary divisor 1. The method suits matrices with many entries ±1 and few entries per row and column, such as the differentials of resolutions, where the core is small. When few pivots ±1 are available, most of the work is done by Hecke on a large core, and the package then brings little over Hecke alone. The articles behind these steps are listed in the [Bibliography](bibliography.md).
