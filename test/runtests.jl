@@ -62,8 +62,7 @@ function caught(f)
     return nothing
 end
 
-# True if `f()` throws an ArgumentError whose message contains `needle` (`@test_throws`
-# with a string checks the message only, not the type).
+# True if `f()` throws an ArgumentError whose message contains `needle` (`@test_throws` with a string checks the message only, not the type).
 function throws_argument_error(f, needle)
     err = try
         f()
@@ -116,7 +115,7 @@ end
         @test sed(A'; value_type = Int64) == reference(Matrix(A'))                # Adjoint
         @test sed(view(sparse(A), 1:30, 1:40); value_type = Int64) == reference(A[1:30, 1:40])
         @test sed(WrappedSparse(sparse(A)); value_type = Int64) == ref            # other sparse type
-        S = Hecke.sparse_matrix(Hecke.ZZ)                                         # SMat de Hecke
+        S = Hecke.sparse_matrix(Hecke.ZZ)                                         # SMat of Hecke
         for r ∈ 1:40
             push!(S, Hecke.sparse_row(Hecke.ZZ, [(c, Hecke.ZZ(A[r, c])) for c ∈ 1:50 if A[r, c] != 0]))
         end
@@ -274,8 +273,7 @@ end
         ref = reference(A)
         rows = SED._rows_data(sparse(A))
         quiet(f) = redirect_stdout(f, devnull)
-        # at each step, the diagnostic search (full loop over the buckets) finds the pivot of
-        # the search of the reduction (cursor of P5), overflow bucket included
+        # at each step, the diagnostic search (full loop over the buckets) finds the pivot of the search of the reduction (with its cursor of P5), overflow bucket included
         for cfg ∈ (ReductionConfig(nworkers = 1), ReductionConfig(nworkers = 1, max_buckets_scanned = 3)),
             mtd ∈ (SED._max_tracked_degree(40, 50), 3)
             M = SED.DualSparseMatrix(rows, 40, 50; value_type = Int64, max_tracked_degree = mtd)
@@ -406,23 +404,25 @@ end
         @test sprint(show, c2) == "ReductionConfig(nworkers = 4, search_mode = :always)"
         @test eval(Meta.parse(sprint(show, c2))) === c2
         # checks at construction
-        for (kw, needle) ∈ ((acceptable_score_threshold = -1,) => "acceptable_score_threshold must be ≥ 0",
-                            (max_buckets_scanned = 0,) => "max_buckets_scanned must be ≥ 1",
-                            (nworkers = 0,) => "nworkers must be nothing or ≥ 1 (got 0)",
-                            (apply_min_work = -1,) => "apply_min_work must be ≥ 0",
-                            (apply_chunk_max = 0,) => "apply_chunk_max must be ≥ 1",
-                            (search_mode = :alway,) => "search_mode must be :auto, :always, :never or :floor (got :alway)",
-                            (search_parallel_min_work = -1,) => "search_parallel_min_work must be ≥ 0",
-                            (search_ns_per_entry = -1.0,) => "search_ns_per_entry must be ≥ 0",
-                            (parallel_fixed_cost_ns = -1.0,) => "parallel_fixed_cost_ns must be ≥ 0",
-                            (apply_parallel_penalty = -0.1,) => "apply_parallel_penalty must be ≥ 0",
-                            (apply_ema_alpha = 0.0,) => "apply_ema_alpha must be in (0, 1]",
-                            (apply_ema_alpha = 1.5,) => "apply_ema_alpha must be in (0, 1]",
-                            (search_chunk_min = 0,) => "search_chunk_min must be ≥ 1",
-                            (search_chunk_min = 8, search_chunk_max = 4) => "search_chunk_max must be ≥ search_chunk_min",
-                            (core_format = :csc,) => "core_format must be :auto, :sparse or :dense",
-                            (dense_min_density = 1.5,) => "dense_min_density must be in [0, 1]",
-                            (dense_max_bytes = -1,) => "dense_max_bytes must be ≥ 0")
+        for (kw, needle) ∈ (
+            (acceptable_score_threshold = -1,) => "acceptable_score_threshold must be ≥ 0",
+            (max_buckets_scanned = 0,) => "max_buckets_scanned must be ≥ 1",
+            (nworkers = 0,) => "nworkers must be nothing or ≥ 1 (got 0)",
+            (apply_min_work = -1,) => "apply_min_work must be ≥ 0",
+            (apply_chunk_max = 0,) => "apply_chunk_max must be ≥ 1",
+            (search_mode = :alway,) => "search_mode must be :auto, :always, :never or :floor (got :alway)",
+            (search_parallel_min_work = -1,) => "search_parallel_min_work must be ≥ 0",
+            (search_ns_per_entry = -1.0,) => "search_ns_per_entry must be ≥ 0",
+            (parallel_fixed_cost_ns = -1.0,) => "parallel_fixed_cost_ns must be ≥ 0",
+            (apply_parallel_penalty = -0.1,) => "apply_parallel_penalty must be ≥ 0",
+            (apply_ema_alpha = 0.0,) => "apply_ema_alpha must be in (0, 1]",
+            (apply_ema_alpha = 1.5,) => "apply_ema_alpha must be in (0, 1]",
+            (search_chunk_min = 0,) => "search_chunk_min must be ≥ 1",
+            (search_chunk_min = 8, search_chunk_max = 4) => "search_chunk_max must be ≥ search_chunk_min",
+            (core_format = :csc,) => "core_format must be :auto, :sparse or :dense",
+            (dense_min_density = 1.5,) => "dense_min_density must be in [0, 1]",
+            (dense_max_bytes = -1,) => "dense_max_bytes must be ≥ 0"
+            )
             @test bad(() -> ReductionConfig(; kw...), needle)
         end
         # keywords of sparse_elementary_divisors: a field given directly wins over config
@@ -510,8 +510,10 @@ end
         # a command that does not exist (the task that writes the script on the standard input
         # warns of the broken pipe: silenced, the logger is inherited by that task)
         Base.CoreLogging.with_logger(Base.CoreLogging.NullLogger()) do
-            @test_throws ErrorException timed_magma_elementary_divisors(sparse([2 0; 0 3]);
-                                                                        magma_command = "sed-no-such-magma-command")
+            @test_throws ErrorException timed_magma_elementary_divisors(
+                sparse([2 0; 0 3]);
+                magma_command = "sed-no-such-magma-command"
+                )
         end
         # a fake Magma (a Julia script with a fixed answer, which checks the matrix it receives
         # on its standard input), for the whole path: script sent, output read and parsed

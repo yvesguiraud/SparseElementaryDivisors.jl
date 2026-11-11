@@ -1,16 +1,8 @@
 # Trajectory fingerprints: non-regression test of the reduction.
 #
-# The references in data/references.toml were computed with SparseElementaryDivisors
-# v0.1.0 (see data/README.md). For every matrix, the elementary divisors and the
-# trajectory fingerprint (ReductionTrace, through the public entry point) must be
-# identical with the default configuration and with the parallel code paths forced
-# (search_mode = :always, apply_min_work = 0), for 1, 2 and 4 workers, with
-# release_empty_vectors = true, and with the cost rule of search_mode = :auto applied to
-# every bucket (search_parallel_min_work = 0). Matrices that overflowed with a smaller value type are
-# also checked to raise the overflow error with that type, recorded in ReductionStats.
+# The references in data/references.toml were computed with SparseElementaryDivisors v0.1.0 (see data/README.md). For every matrix, the elementary divisors and the trajectory fingerprint (ReductionTrace, through the public entry point) must be identical with the default configuration and with the parallel code paths forced (search_mode = :always, apply_min_work = 0), for 1, 2 and 4 workers, with release_empty_vectors = true, and with the cost rule of search_mode = :auto applied to every bucket (search_parallel_min_work = 0). Matrices that overflowed with a smaller value type are also checked to raise the overflow error with that type, recorded in ReductionStats.
 #
-# Heavy matrices (G37) are skipped unless the environment variable SED_HEAVY_DIR gives
-# the folder that contains their .mtx files.
+# Heavy matrices (G37) are skipped unless the environment variable SED_HEAVY_DIR gives the folder that contains their .mtx files.
 
 using TOML
 
@@ -66,8 +58,7 @@ function fp_check(ref, path)
     end
 end
 
-# The widening (step 3 of v0.1.1): a matrix that overflows Int32 gives, from the default
-# sequence of types, the divisors and the trajectory fingerprint of its reference type.
+# The widening: a matrix that overflows Int32 gives, from the default sequence of types, the divisors and the trajectory fingerprint of its reference type.
 function fp_check_widening(ref, path)
     SED = SparseElementaryDivisors
     A = read_matrix_market(path)

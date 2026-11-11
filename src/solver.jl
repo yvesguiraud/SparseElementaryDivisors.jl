@@ -95,21 +95,21 @@ end
 
 """
     UnitColumnIndex(
-    col_rows::Vector{Vector{Int}}, 
-    col_vals::Vector{Vector{T}}, 
-    n::Int, 
+    col_rows::Vector{Vector{Int}},
+    col_vals::Vector{Vector{T}},
+    n::Int,
     max_deg::Int
     ) where T
 
 Initial construction by a full scan (done once, when the matrix is created): all later updates are incremental (see remove_entry! and merge_col!).
 """
 function UnitColumnIndex(
-    col_rows::Vector{Vector{Int}}, 
+    col_rows::Vector{Vector{Int}},
     col_vals::Vector{Vector{T}},
-    n::Int, 
+    n::Int,
     max_deg::Int
     ) where T
-    
+
     unit_count = zeros(Int, n)
     buckets = [Int[] for _ ∈ 1:(max_deg + 2)]
     pos_in_bucket = zeros(Int, n)
@@ -127,9 +127,9 @@ function UnitColumnIndex(
 end
 
 function unit_index_sync!(
-    ui::UnitColumnIndex, 
-    c::Int, 
-    new_count::Int, 
+    ui::UnitColumnIndex,
+    c::Int,
+    new_count::Int,
     new_deg::Int
     )
 
@@ -190,10 +190,10 @@ _max_tracked_degree(m::Int, n::Int) = clamp(max(m, n), 1, _MAX_TRACKED_DEGREE)
 
 """
     DualSparseMatrix(
-        rows_data::RowsData{<:Integer}, 
-        m::Int, 
-        n::Int; 
-        max_tracked_degree = _max_tracked_degree(m, n), 
+        rows_data::RowsData{<:Integer},
+        m::Int,
+        n::Int;
+        max_tracked_degree = _max_tracked_degree(m, n),
         value_type::Type{T} = Int32
         )
 
@@ -202,13 +202,13 @@ Build the matrix in linear time from the vector of `(j, v)` pairs of each row, a
 Precondition, not checked here (the loop writes with `@inbounds` and the merges assume it): `length(rows_data) == m`, in each row columns in `1:n` and strictly increasing, and values that fit in `T`. The public entry point checks the first two once with `_check_rows` and chooses `T` accordingly; the conversions `_rows_data` produce such rows.
 """
 function DualSparseMatrix(
-    rows_data::RowsData{<:Integer}, 
-    m::Int, 
+    rows_data::RowsData{<:Integer},
+    m::Int,
     n::Int;
     max_tracked_degree::Int = _max_tracked_degree(m, n),
     value_type::Type{T} = Int32
     ) where T
-    
+
     row_cols = [Int[] for _ ∈ 1:m]
     row_vals = [T[] for _ ∈ 1:m]
     col_rows = [Int[] for _ ∈ 1:n]
@@ -369,13 +369,13 @@ Ensure `length(buf) >= needed`, with amortised doubling.
 end
 
 @inline function _merge_write_or_skip!(
-    out_keys::Vector{Int}, 
+    out_keys::Vector{Int},
     out_vals::Vector{T},
-    k::Int, 
-    key::Int, 
+    k::Int,
+    key::Int,
     val::T
     )::Int where T
-    
+
     iszero(val) && return k
     k += 1
     @inbounds out_keys[k] = key
@@ -385,12 +385,12 @@ end
 
 """
     merge_row!(
-        M::DualSparseMatrix{T}, 
-        sr::Int, 
-        skip_col::Int, 
-        new_cols::Vector{Int}, 
-        new_vals::Vector{T}, 
-        factor::T, 
+        M::DualSparseMatrix{T},
+        sr::Int,
+        skip_col::Int,
+        new_cols::Vector{Int},
+        new_vals::Vector{T},
+        factor::T,
         release::Bool
         ) where T
 
@@ -399,15 +399,15 @@ Sorted merge in O(n_old + n_new), written into the shared scratch buffer (`M._me
 ⚠️ No guarantee of non-mutation on overflow: `M` must be abandoned entirely as soon as an `OverflowError` is raised here, never reused — this is what `reduce_to_core!` guarantees.
 """
 function merge_row!(
-    M::DualSparseMatrix{T}, 
-    sr::Int, 
+    M::DualSparseMatrix{T},
+    sr::Int,
     skip_col::Int,
-    new_cols::Vector{Int}, 
-    new_vals::Vector{T}, 
+    new_cols::Vector{Int},
+    new_vals::Vector{T},
     factor::T,
     release::Bool
     ) where T
-    
+
     old_cols = M.row_cols[sr]
     old_vals = M.row_vals[sr]
     n_old = length(old_cols)
@@ -467,27 +467,27 @@ end
 
 """
     merge_col!(
-        M::DualSparseMatrix{T}, 
-        c_piv::Int, 
-        skip_row::Int, 
-        new_rows::Vector{Int}, 
-        factors::Vector{T}, 
-        v_p::T, 
+        M::DualSparseMatrix{T},
+        c_piv::Int,
+        skip_row::Int,
+        new_rows::Vector{Int},
+        factors::Vector{T},
+        v_p::T,
         release::Bool
         ) where T
 
 Column-side counterpart of `merge_row!`.
 """
 function merge_col!(
-        M::DualSparseMatrix{T}, 
-        c_piv::Int, 
+        M::DualSparseMatrix{T},
+        c_piv::Int,
         skip_row::Int,
-        new_rows::Vector{Int}, 
-        factors::Vector{T}, 
+        new_rows::Vector{Int},
+        factors::Vector{T},
         v_p::T,
         release::Bool
         ) where T
-    
+
         old_rows = M.col_rows[c_piv]
     old_vals = M.col_vals[c_piv]
     n_old = length(old_rows)
@@ -1413,7 +1413,7 @@ function reduce_to_core!(
     stats::Union{Nothing, ReductionStats} = nothing,
     probe = nothing
     )::Int where T
-    
+
     wsp = ReductionWorkspace{T}(config)
     stats === nothing || (stats.nworkers = wsp.nw)
     total_ones = 0
@@ -1471,7 +1471,7 @@ function _reduce_and_divisors!(
     trace::Union{Nothing, ReductionTrace} = nothing,
     stats::Union{Nothing, ReductionStats} = nothing,
     probe = nothing, verbose::Bool = false)
-    
+
     n_ones = reduce_to_core!(M; config, trace, stats, probe)
 
     nr, nc, nnz = _core_dims(M)
@@ -1517,29 +1517,29 @@ end
 
 """
     _reduce_and_divisors_widening(
-        rows_data::RowsData{<:Integer}, 
-        m::Int, 
-        n::Int, 
-        value_types; 
+        rows_data::RowsData{<:Integer},
+        m::Int,
+        n::Int,
+        value_types;
         config = ReductionConfig(),
-        trace = nothing, 
-        stats = nothing, 
+        trace = nothing,
+        stats = nothing,
         probe = nothing,
         verbose = false)
 
 `_reduce_and_divisors` with each type of `value_types` in turn, from the input, until one does not overflow (the widening of v0.1.1). The trace and the counters of `stats` are reset at the start of each attempt, so that they describe the attempt that succeeds (the choice of the pivots does not depend on the type: the trajectory is that of a direct computation with the type retained); `stats` also receives that type and the failed attempts, the last one included when its overflow is rethrown. The retry happens outside the `catch` block, so that nothing of a failed attempt stays reachable.
 """
 function _reduce_and_divisors_widening(
-    rows_data::RowsData{<:Integer}, 
-    m::Int, 
-    n::Int, 
+    rows_data::RowsData{<:Integer},
+    m::Int,
+    n::Int,
     value_types;
     config::ReductionConfig = ReductionConfig(),
     trace::Union{Nothing, ReductionTrace} = nothing,
     stats::Union{Nothing, ReductionStats} = nothing,
-    probe = nothing, 
+    probe = nothing,
     verbose::Bool = false)
-    
+
     stats === nothing || _reset!(stats)
     k = length(value_types)
     for (i, T) ∈ enumerate(value_types)
