@@ -273,7 +273,7 @@ end
         ref = reference(A)
         rows = SED._rows_data(sparse(A))
         quiet(f) = redirect_stdout(f, devnull)
-        # at each step, the diagnostic search (full loop over the buckets) finds the pivot of the search of the reduction (with its cursor of P5), overflow bucket included
+        # at each step, the diagnostic search (full loop over the buckets) finds the pivot of the search of the reduction (with its cursor), overflow bucket included
         for cfg ∈ (ReductionConfig(nworkers = 1), ReductionConfig(nworkers = 1, max_buckets_scanned = 3)),
             mtd ∈ (SED._max_tracked_degree(40, 50), 3)
             M = SED.DualSparseMatrix(rows, 40, 50; value_type = Int64, max_tracked_degree = mtd)
