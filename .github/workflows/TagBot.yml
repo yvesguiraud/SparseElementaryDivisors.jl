@@ -17,3 +17,6 @@ jobs:
       - uses: JuliaRegistries/TagBot@87cc4cc2b4639f6c743f5772f376a32914060732 # v1.25.15
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          # Deploy key: a tag pushed with it triggers the Documentation workflow, which builds
+          # the documentation of the version (a tag pushed with GITHUB_TOKEN would not).
+          ssh: ${{ secrets.DOCUMENTER_KEY }}
