@@ -89,13 +89,17 @@ function timed_magma_elementary_divisors(
     result = String(take!(out))
     errmsg = String(take!(err))
     usable = occursin("##MAGMA_ERROR_BEGIN##", result) || occursin("##DIVS_BEGIN##", result)
-    if process_error !== nothing || (!usable && proc !== nothing && !success(proc))
+    # Without one of the two markers, nothing can be read from the output, whatever the exit code
+    if process_error !== nothing || !usable
+        # Exit code and signal of the process (signal 9: killed, for instance by the system for lack of memory)
+        status = proc === nothing ? "the process did not complete" : "exit code $(proc.exitcode), signal $(proc.termsignal)" * (proc.termsignal == 9 ? " (killed, for instance by the system for lack of memory)" : "")
         error("""
         The call to Magma failed (command: $cmd)
         --- stderr ---
         $(isempty(strip(errmsg)) ? "[empty]" : errmsg)
         --- stdout ---
         $(isempty(strip(result)) ? "[empty]" : result)
+        Status: $status
         Exception: $process_error
         (with SSH, test: ssh $(ssh_host === nothing ? "<host>" : ssh_host) "echo ok")
         """)
