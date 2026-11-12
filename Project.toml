@@ -1,6 +1,6 @@
 name = "SparseElementaryDivisors"
 uuid = "ae1c1434-3cf1-4e28-ab82-3ca23b97895f"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Yves Guiraud"]
 
 [deps]
