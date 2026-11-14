@@ -1,8 +1,8 @@
 # magma.jl — comparison with Magma (optional: requires a Magma installation, local or through SSH).
 
 # Magma's "flat" sparse format: for each row, the number of non-zero entries followed by the (column, value) pairs.
-function _magma_matrix_definition(rows::RowsData, m::Int, n::Int)
-    Q = Int[]
+function _magma_matrix_definition(rows::RowsData{V}, m::Int, n::Int) where V<:Integer
+    Q = promote_type(Int, V)[]
     for row ∈ rows
         push!(Q, length(row))
         for (c, v) ∈ row
@@ -32,20 +32,35 @@ function _parse_magma_output(raw::AbstractString)
 end
 
 """
-    timed_magma_elementary_divisors(A; ssh_host = nothing, magma_command = "magma -b",
-                                    connect_timeout = 15)
-    timed_magma_elementary_divisors(rows, m, n; kwargs...)
+    timed_magma_elementary_divisors(
+        A;
+        ssh_host::Union{Nothing,AbstractString} = nothing,
+        magma_command::AbstractString = "magma -b",
+        connect_timeout::Int = 15
+        )
 
-Compute the elementary divisors of `A` with Magma, to compare results and timings. Return `(divisors::Vector{BigInt}, t_magma::Float64)`, where `t_magma` is the time measured BY MAGMA for the single call to `ElementaryDivisors` (excluding the connection, the start-up of Magma and the transfer of the matrix; `NaN` if it could not be read). `A` can be of any type accepted by [`sparse_elementary_divisors`](@ref), including a Matrix Market file name.
+    timed_magma_elementary_divisors(
+        rows::RowsData{<:Integer},
+        m::Int,
+        n::Int;
+        kwargs...
+        )
+
+Compute the elementary divisors of `A` with Magma (Bosma, Cannon and Playoust 1997, references in the bibliography of the documentation), to compare results and timings. Return `(divisors::Vector{BigInt}, t_magma::Float64)`, where `t_magma` is the time measured by Magma itself for the single call to `ElementaryDivisors` (excluding the connection, the start-up of Magma and the transfer of the matrix; `NaN` if it could not be read). `A` can be of any type accepted by [`sparse_elementary_divisors`](@ref), including a Matrix Market file name.
 
 Without `ssh_host`, `magma_command` is run locally; otherwise the command is run through `ssh -o ConnectTimeout=… ssh_host magma_command`. The matrix is sent on the standard input.
 
 See [`magma_elementary_divisors`](@ref) for a version returning only the divisors.
 """
-function timed_magma_elementary_divisors(rows::RowsData, m::Int, n::Int;
-                                         ssh_host::Union{Nothing,AbstractString} = nothing,
-                                         magma_command::AbstractString = "magma -b",
-                                         connect_timeout::Int = 15)
+function timed_magma_elementary_divisors(
+    rows::RowsData{<:Integer},
+    m::Int,
+    n::Int;
+    ssh_host::Union{Nothing,AbstractString} = nothing,
+    magma_command::AbstractString = "magma -b",
+    connect_timeout::Int = 15
+    )
+
     script = """
     $(_magma_matrix_definition(rows, m, n))
     try
@@ -74,13 +89,17 @@ function timed_magma_elementary_divisors(rows::RowsData, m::Int, n::Int;
     result = String(take!(out))
     errmsg = String(take!(err))
     usable = occursin("##MAGMA_ERROR_BEGIN##", result) || occursin("##DIVS_BEGIN##", result)
-    if process_error !== nothing || (!usable && proc !== nothing && !success(proc))
+    # Without one of the two markers, nothing can be read from the output, whatever the exit code
+    if process_error !== nothing || !usable
+        # Exit code and signal of the process (signal 9: killed, for instance by the system for lack of memory)
+        status = proc === nothing ? "the process did not complete" : "exit code $(proc.exitcode), signal $(proc.termsignal)" * (proc.termsignal == 9 ? " (killed, for instance by the system for lack of memory)" : "")
         error("""
         The call to Magma failed (command: $cmd)
         --- stderr ---
         $(isempty(strip(errmsg)) ? "[empty]" : errmsg)
         --- stdout ---
         $(isempty(strip(result)) ? "[empty]" : result)
+        Status: $status
         Exception: $process_error
         (with SSH, test: ssh $(ssh_host === nothing ? "<host>" : ssh_host) "echo ok")
         """)
@@ -88,7 +107,7 @@ function timed_magma_elementary_divisors(rows::RowsData, m::Int, n::Int;
     return _parse_magma_output(result)
 end
 
-timed_magma_elementary_divisors(m::Int, n::Int, rows::RowsData; kwargs...) =
+timed_magma_elementary_divisors(m::Int, n::Int, rows::RowsData{<:Integer}; kwargs...) =
     timed_magma_elementary_divisors(rows, m, n; kwargs...)
 timed_magma_elementary_divisors(A::SparseMatrixCSC{<:Integer}; kwargs...) =
     timed_magma_elementary_divisors(_rows_data(A), size(A)...; kwargs...)
@@ -100,9 +119,13 @@ timed_magma_elementary_divisors(path::AbstractString; kwargs...) =
     timed_magma_elementary_divisors(read_matrix_market(path); kwargs...)
 
 """
-    magma_elementary_divisors(A; verbose = false, kwargs...)
+    magma_elementary_divisors(
+        A;
+        verbose::Bool = false,
+        kwargs...
+        )
 
-Non-zero elementary divisors of `A` computed by Magma, as a `Vector{BigInt}` (same result type as [`sparse_elementary_divisors`](@ref)). With `verbose = true`, Magma's own computation time is printed. The other keyword arguments (`ssh_host`, `magma_command`, `connect_timeout`) and the accepted inputs are those of [`timed_magma_elementary_divisors`](@ref), which also returns the time.
+Elementary divisors of `A` computed by Magma, as a `Vector{BigInt}` (same result type as [`sparse_elementary_divisors`](@ref)). With `verbose = true`, Magma's own computation time is printed. The other keyword arguments (`ssh_host`, `magma_command`, `connect_timeout`) and the accepted inputs are those of [`timed_magma_elementary_divisors`](@ref), which also returns the time.
 """
 function magma_elementary_divisors(args...; verbose::Bool = false, kwargs...)
     divs, t = timed_magma_elementary_divisors(args...; kwargs...)

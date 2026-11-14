@@ -1,0 +1,9 @@
+[deps]
+Hecke = "3e1990a7-5d81-5526-99ce-9ba3ff248f21"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+SparseElementaryDivisors = "ae1c1434-3cf1-4e28-ab82-3ca23b97895f"
+TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+
+# The package itself, from this repository (Julia 1.11 or later for [sources]).
+[sources]
+SparseElementaryDivisors = {path = ".."}

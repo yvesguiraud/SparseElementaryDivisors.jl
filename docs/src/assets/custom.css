@@ -1,0 +1,5 @@
+/* Documenter lists the headings of the current page under its entry in the sidebar; they
+   are hidden here, the navigation keeping the pages only (docs/make.jl, assets). */
+#documenter .docs-sidebar .docs-menu ul.internal {
+  display: none;
+}

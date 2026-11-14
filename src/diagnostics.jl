@@ -47,6 +47,19 @@ function _check_buckets(db::DegreeBuckets, degrees::Vector{Int}, tracked::Vector
     return ok
 end
 
+# Invariant of the cursor `low`.
+function _check_low(db::DegreeBuckets, name::String)::Bool
+    ok = 2 <= db.low <= db.max_deg + 1
+    ok || println("[$name] low = $(db.low) outside 2:$(db.max_deg + 1)")
+    for d ∈ 2:min(db.low - 1, db.max_deg)
+        if !isempty(db.buckets[d + 1])
+            println("[$name] the bucket of degree $d is not empty, below low = $(db.low)")
+            ok = false
+        end
+    end
+    return ok
+end
+
 function check_structure_consistency(M::DualSparseMatrix)::Bool
     ok = true
     nnz_rows = 0; nnz_cols = 0
@@ -56,7 +69,7 @@ function check_structure_consistency(M::DualSparseMatrix)::Bool
             println("Row $r: indices/values lengths differ"); ok = false; continue
         end
         for k ∈ eachindex(cols)
-            (k > 1 && cols[k - 1] >= cols[k]) && (println("Ligne $r : indices non strictement croissants"); ok = false)
+            (k > 1 && cols[k - 1] >= cols[k]) && (println("Row $r: indices not strictly increasing"); ok = false)
             iszero(vals[k]) && (println("Row $r: stored zero value"); ok = false)
             c = cols[k]
             rr = M.col_rows[c]
@@ -71,7 +84,7 @@ function check_structure_consistency(M::DualSparseMatrix)::Bool
         rr = M.col_rows[c]
         length(rr) != length(M.col_vals[c]) && (println("Column $c: indices/values lengths differ"); ok = false)
         for k ∈ 2:length(rr)
-            rr[k - 1] >= rr[k] && (println("Colonne $c : indices non strictement croissants"); ok = false)
+            rr[k - 1] >= rr[k] && (println("Column $c: indices not strictly increasing"); ok = false)
         end
         nnz_cols += length(rr)
     end
@@ -84,30 +97,26 @@ function check_structure_consistency(M::DualSparseMatrix)::Bool
     ok &= _check_buckets(M.col_buckets, col_deg, fill(true, M.num_cols), "col_buckets")
     tracked = [M.unit_index.unit_count[c] > 0 for c ∈ 1:M.num_cols]
     ok &= _check_buckets(M.unit_index.buckets, col_deg, tracked, "unit_index")
+    ok &= _check_low(M.row_buckets, "row_buckets")
+    ok &= _check_low(M.col_buckets, "col_buckets")
+    ok &= _check_low(M.unit_index.buckets, "unit_index")
     ok &= check_unit_index_consistency(M)
     return ok
-end
-
-"""
-    state_signature(M)
-
-Informative trajectory comparison between two instances.
-"""
-function state_signature(M)
-    return (deepcopy(M.row_cols), deepcopy(M.row_vals), deepcopy(M.col_rows), deepcopy(M.col_vals),
-            deepcopy(M.row_buckets.buckets), deepcopy(M.col_buckets.buckets),
-            deepcopy(M.unit_index.buckets.buckets), copy(M.unit_index.unit_count))
 end
 
 ####################################
 ### Pivot search cost diagnostic ###
 ####################################
 
-# `diagnostic_pivot_search` reproduces EXACTLY the search (not the fill-in) of `markowitz_pivot!`; WITHOUT ANY MUTATION of `M`. `diagnose_pivot_search_cost` calls it just BEFORE the actual pivot step at each iteration: since `M` is unchanged between the two calls, both searches find the same pivot, so the mathematical result and the pivoting trajectory are EXACTLY those of a normal run with these settings; only the search is done twice (diagnostic cost ≈ 2× the search cost alone, NOT 2× the total cost). The returned NamedTuples record `n_scanned` and respect `max_buckets_scanned`.
+# `diagnostic_pivot_search` reproduces exactly the search (not the fill-in) of `markowitz_pivot!`, without any mutation of `M`. `diagnose_pivot_search_cost` calls it just before the actual pivot step at each iteration: since `M` is unchanged between the two calls, both searches find the same pivot, so the mathematical result and the pivoting trajectory are exactly those of a normal run with these settings; only the search is done twice (diagnostic cost ≈ 2× the search cost alone, not 2× the total cost). The returned NamedTuples record `n_scanned` and respect `max_buckets_scanned`.
 
-function diagnostic_pivot_search(M::DualSparseMatrix{T};
-                                  acceptable_score_threshold::Int = 4,
-                                  max_buckets_scanned::Int = typemax(Int)) where {T}
+function diagnostic_pivot_search(
+    M::DualSparseMatrix{T};
+    config::ReductionConfig = ReductionConfig()
+    ) where T
+
+    acceptable_score_threshold::Int = config.acceptable_score_threshold
+    max_buckets_scanned::Int = config.max_buckets_scanned
     best_score::Int = typemax(Int)
     p_r::Int = -1
     p_c::Int = -1
@@ -192,35 +201,48 @@ function diagnostic_pivot_search(M::DualSparseMatrix{T};
 end
 
 """
-    diagnose_pivot_search_cost(M; acceptable_score_threshold = 4, max_buckets_scanned = typemax(Int))
+    diagnose_pivot_search_cost(
+        M::DualSparseMatrix{T};
+        config::ReductionConfig = ReductionConfig()
+        ) where T
 
-Run the complete reduction (structured elimination + Markowitz), doubling the pivot search at each iteration with `diagnostic_pivot_search` (read-only) to collect, FOR EACH MARKOWITZ PIVOT ACTUALLY APPLIED, its final score, `n_scanned`, `n_buckets_scanned`, and whether the search stopped by early break or by exhaustion (bucket or cap). MUTATES `M` — pass a copy (`deepcopy(M)`) to keep the original.
+Run the complete reduction (structured elimination + Markowitz), doubling the pivot search at each iteration with `diagnostic_pivot_search` (read-only) to collect, for each Markowitz pivot actually applied, its final score, `n_scanned`, `n_buckets_scanned`, and whether the search stopped by early break or by exhaustion (bucket or cap). Mutates `M`: pass a copy (`deepcopy(M)`) to keep the original.
 
-Returns a `Vector{<:NamedTuple}`, to be summarized with `summarize_pivot_search_diag`.
+Returns a `Vector{<:NamedTuple}`, to be summarised with `summarize_pivot_search_diag`.
 """
-function diagnose_pivot_search_cost(M::DualSparseMatrix{T};
-                                     acceptable_score_threshold::Int = 4,
-                                     max_buckets_scanned::Int = typemax(Int)) where {T}
+function diagnose_pivot_search_cost(
+    M::DualSparseMatrix{T};
+    config::ReductionConfig = ReductionConfig()
+    ) where T
+
     diag = NamedTuple{(:score, :n_scanned, :n_buckets_scanned, :early_break),
                        Tuple{Int,Int,Int,Bool}}[]
     while true
         eliminate_structured!(M)
-        d = diagnostic_pivot_search(M; acceptable_score_threshold, max_buckets_scanned)
+        d = diagnostic_pivot_search(M; config)
         d.found || break
         push!(diag, (score = d.best_score, n_scanned = d.n_scanned,
                      n_buckets_scanned = d.n_buckets_scanned, early_break = d.early_break))
-        markowitz_pivot!(M; acceptable_score_threshold, max_buckets_scanned) || break
+        markowitz_pivot!(M; config) || break
     end
     return diag
 end
 
 """
-    summarize_pivot_search_diag(diag; top_k=20, n_bins=8)
+    summarize_pivot_search_diag(
+        diag::Vector{<:NamedTuple};
+        top_k::Int = 20,
+        n_bins::Int = 8
+        )
 
 Summary of the results of `diagnose_pivot_search_cost`, including the statistics of `n_buckets_scanned` (in addition to `n_scanned` / `score`) — the data directly relevant to judge the effect of `max_buckets_scanned`. Prints global statistics, a Pareto-style concentration curve, a histogram by cost range, and the top-K most expensive pivots.
 """
-function summarize_pivot_search_diag(diag::Vector{<:NamedTuple};
-                                         top_k::Int = 20, n_bins::Int = 8)
+function summarize_pivot_search_diag(
+    diag::Vector{<:NamedTuple};
+    top_k::Int = 20,
+    n_bins::Int = 8
+    )
+
     n_total = length(diag)
     scores = [d.score for d ∈ diag]
     scanned = [d.n_scanned for d ∈ diag]
@@ -233,7 +255,7 @@ function summarize_pivot_search_diag(diag::Vector{<:NamedTuple};
     println("Total non-empty buckets scanned: $total_buckets")
     println()
 
-    println("--- Statistiques globales ---")
+    println("--- Global statistics ---")
     for (name, vals) ∈ (("n_scanned", scanned), ("n_buckets_scanned", buckets), ("score", scores))
         sorted_vals = sort(vals)
         n = length(sorted_vals)
@@ -280,9 +302,9 @@ function summarize_pivot_search_diag(diag::Vector{<:NamedTuple};
 end
 
 """
-    sweep_search_params(M, configs)
+    sweep_search_params(M::DualSparseMatrix, configs::Vector{Tuple{Int,Int}})
 
-Sweep several combinations `(acceptable_score_threshold, max_buckets_scanned)` (`configs` is a `Vector{Tuple{Int,Int}}`) on a COPY of `M` for each configuration. No `@btime`/`@benchmark` here. For each configuration, records:
+Sweep several combinations `(acceptable_score_threshold, max_buckets_scanned)` (`configs` is a `Vector{Tuple{Int,Int}}`) on a copy of `M` for each configuration. No `@btime`/`@benchmark` here. For each configuration, records:
   - the search cost (`total_scanned` / `total_buckets_scanned`);
   - the size of the final residual core (`core_nrows` / `core_ncols` / `core_nnz`);
   - the final divisors, to check that results agree between configurations.
@@ -294,18 +316,17 @@ function sweep_search_params(M::DualSparseMatrix, configs::Vector{Tuple{Int,Int}
     DiagNT = NamedTuple{(:score, :n_scanned, :n_buckets_scanned, :early_break),
                          Tuple{Int,Int,Int,Bool}}
     for (threshold, max_buckets) ∈ configs
+        cfg = ReductionConfig(; acceptable_score_threshold = threshold, max_buckets_scanned = max_buckets)
         M_diag = deepcopy(M)
         diag = DiagNT[]
         n_ones = 0
         while true
             n_ones += eliminate_structured!(M_diag)
-            d = diagnostic_pivot_search(M_diag; acceptable_score_threshold = threshold,
-                                         max_buckets_scanned = max_buckets)
+            d = diagnostic_pivot_search(M_diag; config = cfg)
             d.found || break
             push!(diag, (score = d.best_score, n_scanned = d.n_scanned,
                          n_buckets_scanned = d.n_buckets_scanned, early_break = d.early_break))
-            markowitz_pivot!(M_diag; acceptable_score_threshold = threshold,
-                                              max_buckets_scanned = max_buckets) || break
+            markowitz_pivot!(M_diag; config = cfg) || break
             n_ones += 1
         end
         total_scanned = sum(d.n_scanned for d ∈ diag; init = 0)
@@ -340,13 +361,15 @@ function sweep_search_params(M::DualSparseMatrix, configs::Vector{Tuple{Int,Int}
     ref_divs = results[1].divisors
     for res ∈ results
         if res.divisors != ref_divs
+            # COV_EXCL_START: reached only if two settings give different divisors, a bug
             println("WARNING: results differ for (threshold=$(res.threshold), ",
                     "max_buckets_scanned=$(res.max_buckets_scanned)) — expected $ref_divs, ",
                     "got $(res.divisors)")
+            # COV_EXCL_STOP
         end
     end
     return results
 end
 
-# NOT INCLUDED (to be added if really needed): the fill-in size collection and summary tools. To judge the fill-in quality of a configuration (threshold, max_buckets_scanned), the size of the final residual core (core_nrows / core_ncols / core_nnz, already reported by `sweep_search_params`) is enough.
+# Not included (to be added if really needed): the fill-in size collection and summary tools. To judge the fill-in quality of a configuration (threshold, max_buckets_scanned), the size of the final residual core (core_nrows / core_ncols / core_nnz, already reported by `sweep_search_params`) is enough.
 
