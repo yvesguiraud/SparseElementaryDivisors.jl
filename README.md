@@ -1,5 +1,7 @@
 # SparseElementaryDivisors.jl
 
+[![Docs stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://yvesguiraud.github.io/SparseElementaryDivisors.jl/stable/)
+[![Docs dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://yvesguiraud.github.io/SparseElementaryDivisors.jl/dev/)
 [![CI](https://github.com/yvesguiraud/SparseElementaryDivisors.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/yvesguiraud/SparseElementaryDivisors.jl/actions/workflows/CI.yml)
 [![codecov](https://codecov.io/gh/yvesguiraud/SparseElementaryDivisors.jl/graph/badge.svg)](https://codecov.io/gh/yvesguiraud/SparseElementaryDivisors.jl)
 
