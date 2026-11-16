@@ -47,7 +47,7 @@ On server 1: Hecke alone, run on the first three matrices only, and the package 
 
 ## Comparison with Magma
 
-On server 2: Magma, which uses one thread by default, and the package with one thread and with all 16 threads.
+On server 2: Magma, which uses one thread by default, and the package with one thread and with all 16 threads. Magma can use several threads in some of its algorithms (`SetNthreads`, see the chapter [Parallelism](https://magma.maths.usyd.edu.au/magma/handbook/parallelism) of the Magma handbook); with 16 threads and a fixed seed, on ZT2w4m5 d₂ to d₄ and G₃₇ d₅, its times decrease by at most 6%.
 
 | Matrix | Magma | Package, 1 thread | Package, 16 threads |
 |---|---|---|---|
