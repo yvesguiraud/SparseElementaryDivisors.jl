@@ -1,6 +1,6 @@
 # Benchmarks
 
-Times of the complete computation of the elementary divisors of the matrices below, on three machines. For the package, the time is that of the whole call to [`sparse_elementary_divisors`](@ref) on the matrix already read from its file: reduction, extraction of the core, and Hecke on the core. For Magma, it is the time that Magma measures for `ElementaryDivisors` alone, without the transfer of the matrix. For Hecke alone, it is the time of `Hecke.elementary_divisors` on the matrix already built as a `SMat`. Each time is the median of three runs, unless stated otherwise. The measurements were made in November 2026 with version 0.1.1 of the package, Julia 1.13.3, Hecke 0.41.1 and Magma V2.29-4, by the script `benchmark/benchmarks.jl` of the repository, where the raw results are kept (`benchmark/results`).
+Times of the complete computation of the elementary divisors of the matrices below, on four machines. For the package, the time is that of the whole call to [`sparse_elementary_divisors`](@ref) on the matrix already read from its file: reduction, extraction of the core, and Hecke on the core. For Magma, it is the time that Magma measures for `ElementaryDivisors` alone, without the transfer of the matrix. For Hecke alone, it is the time of `Hecke.elementary_divisors` on the matrix already built as a `SMat`. Each time is the median of three runs, unless stated otherwise. The measurements were made in November 2026 with version 0.1.1 of the package, Julia 1.13.3, Hecke 0.41.1 and Magma V2.29-4, by the script `benchmark/benchmarks.jl` of the repository, where the raw results are kept (`benchmark/results`).
 
 ## Matrices
 
@@ -22,9 +22,10 @@ The matrices G₃₇ d₃ to d₆ are the differentials of the reduced lcm resol
 |---|---|---|---|---|
 | Server 1 | Intel Core i9-13900 | 32 | 128 GB | Linux |
 | Server 2 | 2 × Intel Xeon Gold 5222 | 16 | 64 GB | Linux |
-| Workstation | Intel Core Ultra 9 285H | 16 | 64 GB | Windows |
+| Workstation 1 | Intel Core Ultra 9 285 | 24 | 128 GB | Windows |
+| Workstation 2 | Intel Core Ultra 9 285H | 16 | 64 GB | Windows |
 
-Server 1 is shared: jobs of other users were running during the measurements; the runs of a same series differed by at most 11%. On server 2, a computation on one thread takes about 25% longer on one of its two processors than on the other, and the system runs it on either; its times on one thread vary accordingly. Magma is available to us on server 2 only, so the comparison with Magma is made there, on the same matrices and the same machine. The package runs wherever Julia runs: the other tables give its times on server 1, with Hecke alone for comparison, and on a workstation.
+Server 1 is shared: jobs of other users were running during the measurements; the runs of a same series differed by at most 11%. On server 2, a computation on one thread takes about 25% longer on one of its two processors than on the other, and the system runs it on either; its times on one thread vary accordingly. Magma is available to us on server 2 only, so the comparison with Magma is made there, on the same matrices and the same machine. The package runs wherever Julia runs: the other tables give its times on server 1, with Hecke alone for comparison, and on two workstations.
 
 ## Comparison with Hecke
 
@@ -56,11 +57,9 @@ On server 2: Magma, which uses one thread by default, and the package with one t
 | G₃₇ d₆ | 17.7 s | 1 min 27 s | 41.0 s |
 | ZT2w4m5 d₂ | 5.5 s [^3] | 20.0 s | 7.2 s |
 | ZT2w4m5 d₃ | 42.6 s [^3] | 3 min 46 s | 53.2 s |
-| ZT2w4m5 d₄ | 28 min 45 s [^4] | 43 min 27 s [^2] | 11 min 31 s [^2] |
+| ZT2w4m5 d₄ | 28 min 45 s [^3] | 43 min 27 s [^2] | 11 min 31 s [^2] |
 
 [^3]: Median of six runs.
-
-[^4]: Median of six runs; see below.
 
 Both computations have two phases. For a sparse matrix, Magma's `ElementaryDivisors` first performs a sparse elimination with Markowitz pivoting, then passes the remaining matrix to its algorithm for dense matrices, usually a modular one (see the chapter [Sparse Matrices](https://magma.maths.usyd.edu.au/magma/handbook/sparse_matrices) and the section [Canonical Forms](https://magma.maths.usyd.edu.au/magma/handbook/text/280) of the Magma handbook). The package eliminates the unit pivots, then passes the remaining matrix to Hecke. In both cases, the matrix passed to the second phase is called the core below.
 
@@ -80,9 +79,23 @@ Magma's `ElementaryDivisors` draws random numbers (the step of the random number
 
 The core of Magma depends on the seed: the table gives it for `magma -S 1`, from the verbose output, in the orientation of the original matrix. The two eliminations choose different pivots and stop at different points. On ZT2w4m5 d₂, Magma stops when the density of the remaining matrix exceeds 50%, while the package continues. On ZT2w4m5 d₄, after almost the same number of pivots (431161 for Magma, 431162 for the package), the core of Magma has 2.8 million entries and that of the package 130 million.
 
-## Times on a workstation
+## Times on workstations
 
-On the workstation: the package with one thread and with all 16 threads, both series running in the same process, and the peak memory of that process.
+On each workstation: the package with one thread and with all its threads, both series running in the same process, and the peak memory of that process.
+
+### Workstation 1
+
+| Matrix | 1 thread | 24 threads | Peak memory |
+|---|---|---|---|
+| G₃₇ d₃ | 3.4 s | 2.2 s | 0.9 GiB |
+| G₃₇ d₄ | 24.3 s | 11.1 s | 1.7 GiB |
+| G₃₇ d₅ | 1 min 45 s | 23.8 s | 3.8 GiB |
+| G₃₇ d₆ | 47.7 s | 11.8 s | 2.9 GiB |
+| ZT2w4m5 d₂ | 10.1 s | 3.0 s | 1.5 GiB |
+| ZT2w4m5 d₃ | 2 min 9 s | 22.8 s | 5.2 GiB |
+| ZT2w4m5 d₄ | 38 min 5 s [^2] | 6 min 35 s [^2] | 33.4 GiB |
+
+### Workstation 2
 
 | Matrix | 1 thread | 16 threads | Peak memory |
 |---|---|---|---|
