@@ -3,7 +3,7 @@
 """
     SparseElementaryDivisors.DEFAULT_VALUE_TYPES
 
-The sequence of integer types tried by `value_type = :auto`, in increasing width: `(Int32, Int64, Int128, BigInt)`. `Int32` comes first because it saves time and memory on large matrices (on the differentials of the dual braid monoid of G₃₇, in trivial coefficients, it saves 20% of the time and 17% of the peak memory compared with `Int64`), and its failed attempts cost little when the coefficients grow (their overflow comes early).
+The sequence of integer types tried by `value_type = :auto`, in increasing width: `(Int32, Int64, Int128, BigInt)`. `Int32` comes first because it saves time and memory on large matrices: on the differentials of the dual braid monoid of G₃₇, in trivial coefficients, it saves 20% of the time and 17% of the peak memory compared with `Int64`. Its failed attempts cost little when the coefficients grow, since their overflow comes early.
 """
 const DEFAULT_VALUE_TYPES = (Int32, Int64, Int128, BigInt)
 
@@ -161,19 +161,32 @@ end
         kwargs...
         )
 
-Elementary divisors of the integer matrix `A` (the non-zero diagonal entries of its Smith normal form), in increasing order: a `d::Vector{BigInt}` such that each `d[i]` divides `d[i+1]`.
+The elementary divisors of the integer matrix `A`, that is, the non-zero diagonal entries of its Smith normal form, in increasing order: a `d::Vector{BigInt}` such that each `d[i]` divides `d[i+1]`.
 
-`A` can be a `SparseMatrixCSC` (fast path), any other `AbstractSparseMatrix` or `AbstractMatrix{<:Integer}` (converted), a Hecke matrix (`Hecke.SMat{ZZRingElem}` or `Hecke.ZZMatrix`), or the matrix given row by row: `rows[r]` is the vector of `(column, value)` pairs of row `r`, with columns in `1:n` and strictly increasing, for an `m × n` matrix (zero values are allowed and ignored; values of any integer type, entries beyond a machine word included). The input is checked before the computation: an `ArgumentError` names the first fault (column out of range, unsorted or repeated column, wrong number of rows); unsorted triplets go through `sparse(I, J, V)`, which sorts them and sums duplicates. With a file name, the matrix is read in Matrix Market format (see [`read_matrix_market`](@ref)).
+The matrix can be given in the following forms:
+- a `SparseMatrixCSC`, the fast path;
+- any other `AbstractSparseMatrix` or `AbstractMatrix{<:Integer}`, which is converted;
+- a Hecke matrix, `Hecke.SMat{ZZRingElem}` or `Hecke.ZZMatrix`;
+- row by row: `rows[r]` is the vector of the `(column, value)` pairs of the row `r`, with columns in `1:n` and strictly increasing, for an `m × n` matrix; zero values are allowed and ignored, and the values can be of any integer type, entries beyond a machine word included;
+- the name of a file in Matrix Market format (see [`read_matrix_market`](@ref)).
 
-- `value_type`: integer type(s) of the coefficients during the elimination, with checked arithmetic. `:auto` (default) tries the types of `SparseElementaryDivisors.DEFAULT_VALUE_TYPES` = `(Int32, Int64, Int128, BigInt)` in turn, starting with the first one that holds all the entries, and restarts the computation from the input with the next type after an overflow (each matrix independently: a failed attempt costs its time). A type (`value_type = Int64`) uses that type only; a sequence (`value_type = (Int64, Int128)`) tries its types in turn. Accepted types: signed integers of fixed width (`Int8` to `Int128`, or wider ones such as `Int256` of BitIntegers.jl) in strictly increasing width, and `BigInt` last. When the last type does not suffice, a [`CoefficientOverflowError`](@ref) is raised.
-- `config`: the settings of the reduction, a [`ReductionConfig`](@ref) (pivot search, parallelism, format of the core, memory); the same for all the attempts of the widening.
-- `settings...`: any field of `ReductionConfig` given directly as a keyword, which takes precedence over `config`. The most common: `nworkers` (number of parallel tasks, default `Threads.nthreads()`; start Julia with `-t auto` or `-t N`; the result does not depend on it) and `core_format` (`:auto`, `:sparse` or `:dense`, format of the core passed to Hecke). An unknown keyword raises an `ArgumentError`.
-- `stats`: a [`ReductionStats`](@ref), reset then filled in place: type retained, failed attempts, counters, times and core.
-- `verbose`: print the attempts that overflowed, the type retained, and the size and format of the core.
+The input is checked before the computation: an `ArgumentError` names the first fault (column out of range, unsorted or repeated column, wrong number of rows). Unsorted triplets can go through `sparse(I, J, V)`, which sorts them and sums the duplicates.
 
-Developer tools: `trace`, a `SparseElementaryDivisors.ReductionTrace` (trajectory fingerprint of the attempt retained), and `probe`, a function of no argument called after each Markowitz pivot.
+The keyword arguments are the following:
+- `value_type`: the integer type or types of the coefficients during the elimination, with checked arithmetic. With `:auto`, the default, the types of `SparseElementaryDivisors.DEFAULT_VALUE_TYPES`, `(Int32, Int64, Int128, BigInt)`, are tried in turn, starting with the first one that holds all the entries, and the computation restarts from the input with the next type after an overflow; each matrix is treated independently, and a failed attempt costs its time. A type (`value_type = Int64`) uses that type only, and a sequence (`value_type = (Int64, Int128)`) tries its types in turn. The accepted types are the signed integers of fixed width (`Int8` to `Int128`, or wider ones such as `Int256` of BitIntegers.jl), in strictly increasing width, with `BigInt` last. When the last type does not suffice, a [`CoefficientOverflowError`](@ref) is raised.
+- `config`: the settings of the reduction, a [`ReductionConfig`](@ref) (pivot search, parallelism, format of the core, memory), the same for all the attempts of the widening.
+- `settings...`: any field of `ReductionConfig`, given directly as a keyword, which takes precedence over `config`. The most common ones are `nworkers`, the number of parallel tasks (by default `Threads.nthreads()`; start Julia with `-t auto` or `-t N`; the result does not depend on it), and `core_format` (`:auto`, `:sparse` or `:dense`), the format of the core passed to Hecke. An unknown keyword raises an `ArgumentError`.
+- `stats`: a [`ReductionStats`](@ref), reset then filled in place with the type retained, the failed attempts, the counters, the times and the core.
+- `verbose`: if `true`, the attempts that overflowed, the type retained, and the size and format of the core are printed.
 
-Method: a structured elimination (LaMacchia and Odlyzko 1991) pivots on the rows and columns of degree one whose entry is ±1; then each step pivots on a ±1 entry of small Markowitz score (r − 1)(c − 1) (Markowitz 1957), r and c being the numbers of entries of its row and column, and the structured elimination runs again. Each ±1 pivot gives an elementary divisor 1; the core that remains, with no ±1 entry left, goes to `Hecke.elementary_divisors` (Fieker, Hart, Hofmann and Johansson 2017; FLINT). On the Smith normal form of large sparse integer matrices, in particular from homology, see Dumas, Saunders and Villard (2001). References in the bibliography of the documentation.
+Two developer tools are also accepted as keywords: `trace`, a `SparseElementaryDivisors.ReductionTrace`, which receives the trajectory fingerprint of the attempt retained, and `probe`, a function of no argument called after each Markowitz pivot.
+
+The method has three steps:
+1. a structured elimination (LaMacchia and Odlyzko 1991) pivots on the rows and columns of degree one whose entry is ±1;
+2. each following step pivots on an entry ±1 of small Markowitz score (r − 1)(c − 1) (Markowitz 1957), where r and c are the numbers of entries of its row and of its column, and the structured elimination runs again;
+3. each pivot ±1 gives an elementary divisor 1, and the core that remains, with no entry ±1 left, goes to `Hecke.elementary_divisors` (Fieker, Hart, Hofmann and Johansson 2017; FLINT).
+
+On the Smith normal form of large sparse integer matrices, in particular from homology, see Dumas, Saunders and Villard (2001). The references are in the bibliography of the documentation.
 """
 function sparse_elementary_divisors(
     rows::RowsData{<:Integer},

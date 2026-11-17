@@ -1,9 +1,15 @@
 # matrixmarket.jl — reading integer matrices in Matrix Market format (coordinate or array), and writing them (coordinate integer general).
 
 """
-    read_matrix_market(path_or_io) -> SparseMatrixCSC{Int,Int}
+    read_matrix_market(path::AbstractString) -> SparseMatrixCSC{Int,Int}
+    read_matrix_market(io::IO) -> SparseMatrixCSC{Int,Int}
 
-Read a matrix in [Matrix Market](https://math.nist.gov/MatrixMarket/formats.html) format (Boisvert, Pozo and Remington 1996, references in the bibliography of the documentation): `coordinate` (the format suited to sparse matrices) or `array`, of type `integer` or `pattern` (all entries equal to 1); `real` is accepted if all values are integers. The symmetry can be `general`, `symmetric` or `skew-symmetric` (the latter two for `coordinate` only). Comment lines (`%`) are ignored. The values are read as `Int`: an entry beyond a machine word raises an error. See also [`write_matrix_market`](@ref).
+Read a matrix in [Matrix Market](https://math.nist.gov/MatrixMarket/formats.html) format (Boisvert, Pozo and Remington 1996; references in the bibliography of the documentation). The accepted formats are the following:
+- `coordinate`, the format suited to sparse matrices, or `array`;
+- of type `integer` or `pattern` (all entries equal to 1), or `real` if all the values are integers;
+- with the symmetry `general`, `symmetric` or `skew-symmetric`, the latter two for `coordinate` only.
+
+The comment lines (`%`) are ignored. The values are read as `Int`: an entry beyond a machine word raises an error. See also [`write_matrix_market`](@ref).
 """
 function read_matrix_market(io::IO)
     header = readline(io)
@@ -89,11 +95,11 @@ read_matrix_market(path::AbstractString) = open(read_matrix_market, path)
         comment::Union{Nothing,AbstractString,Vector{<:AbstractString}} = nothing
         )
 
-Write the integer matrix `A` (a `SparseMatrixCSC{<:Integer}`, or any `AbstractMatrix{<:Integer}`, converted by `sparse`) in [Matrix Market](https://math.nist.gov/MatrixMarket/formats.html) format (Boisvert, Pozo and Remington 1996), `coordinate integer general`: the header line, the comment lines, the line `m n nnz`, then one line `i j v` per nonzero entry, sorted by row, then by column. The stored zeros are left out (`nnz` counts the entries written); the values are written in decimal, whatever their integer type (`BigInt` included); the lines end with `\\n` on every system. The same matrix written with the same comment always gives the same bytes.
+Write the integer matrix `A` (a `SparseMatrixCSC{<:Integer}`, or any `AbstractMatrix{<:Integer}`, converted by `sparse`) in [Matrix Market](https://math.nist.gov/MatrixMarket/formats.html) format (Boisvert, Pozo and Remington 1996), `coordinate integer general`. The file contains the header line, the comment lines, the line `m n nnz`, then one line `i j v` per nonzero entry, sorted by row, then by column. The stored zeros are left out, so that `nnz` counts the entries written. The values are written in decimal, whatever their integer type (`BigInt` included), and the lines end with `\\n` on every system. The same matrix written with the same comment always gives the same bytes.
 
-`comment`: `nothing`, a string (several lines if it contains `\\n`) or a vector of strings; each line is written after `% `. An existing file is overwritten. Returns `nothing`.
+The keyword `comment` is `nothing`, a string (several lines if it contains `\\n`) or a vector of strings; each line is written after `% `. An existing file is overwritten, and the function returns `nothing`.
 
-[`read_matrix_market`](@ref) reads such a file back, with values of type `Int`: an entry beyond a machine word can be written but not read back yet.
+[`read_matrix_market`](@ref) reads such a file back, with values of type `Int`: an entry beyond a machine word can be written, but not read back yet.
 
 ```julia
 write_matrix_market("d2.mtx", A; comment = "d_2 of B*(G34), trivial coefficients")

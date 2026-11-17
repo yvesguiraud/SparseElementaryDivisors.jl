@@ -3,7 +3,7 @@
 """
     RowsData{V}
 
-A matrix given row by row: `rows[r]` is the vector of the `(column, value)` pairs of row `r`, columns strictly increasing, values of type `V <: Integer` (`Int`, or `BigInt` for entries beyond a machine word).
+A matrix given row by row: `rows[r]` is the vector of the `(column, value)` pairs of the row `r`, with columns strictly increasing and values of type `V <: Integer` (`Int`, or `BigInt` for entries beyond a machine word).
 """
 const RowsData{V} = Vector{Vector{Tuple{Int, V}}}
 
@@ -559,9 +559,13 @@ end
 """
     SparseElementaryDivisors.ReductionTrace()
 
-Trajectory fingerprint, a developer tool (public, not exported): passed to [`sparse_elementary_divisors`](@ref) with the keyword `trace`, it receives a running hash (FNV-1a on 64-bit words) of the Markowitz pivots `(row, column)` and of the calls of the structured elimination, in order. Two computations with the same fingerprint chose the same pivots in the same order; the test suite compares it with references computed by v0.1.0, for 1 to 4 workers and with the parallel paths forced. Reset at the start of each attempt of the widening: it describes the attempt retained.
+The trajectory fingerprint, a developer tool, public but not exported. Passed to [`sparse_elementary_divisors`](@ref) with the keyword `trace`, it receives a running hash (FNV-1a on 64-bit words) of the Markowitz pivots `(row, column)` and of the calls of the structured elimination, in order. Two computations with the same fingerprint chose the same pivots in the same order; the test suite compares it with references computed by v0.1.0, for 1 to 4 workers and with the parallel paths forced. It is reset at the start of each attempt of the widening, so that it describes the attempt retained.
 
-Fields: `h` (hash), `n_pivots` (Markowitz pivots), `n_sge` (calls of the structured elimination), `sum_ones` (unit pivots found by the structured elimination).
+Its fields are:
+- `h`, the hash;
+- `n_pivots`, the number of Markowitz pivots;
+- `n_sge`, the number of calls of the structured elimination;
+- `sum_ones`, the number of unit pivots found by the structured elimination.
 """
 mutable struct ReductionTrace
     h::UInt64
@@ -602,7 +606,7 @@ Base.show(io::IO, tr::ReductionTrace) =
 """
     ReductionStats()
 
-Statistics of a computation, filled in place by [`sparse_elementary_divisors`](@ref) through its keyword `stats`:
+The statistics of a computation, filled in place by [`sparse_elementary_divisors`](@ref) through its keyword `stats`:
 
 ```julia
 st = ReductionStats()
@@ -610,26 +614,26 @@ d = sparse_elementary_divisors(A; stats = st)
 st.value_type        # the integer type retained by the widening
 ```
 
-All the fields are reset at the start of each call. The counters, times and core describe the attempt retained (the one that did not overflow); with `value_type = :auto` or a sequence of types, the attempts that overflowed before it are listed in `failed_attempts`. One object per computation: two computations running at the same time must not share it.
+All the fields are reset at the start of each call. The counters, the times and the core describe the attempt retained, the one that did not overflow; with `value_type = :auto` or a sequence of types, the attempts that overflowed before it are listed in `failed_attempts`. Use one object per computation: two computations running at the same time must not share it.
 
 Widening:
 - `value_type`: the type retained, `nothing` before the end of a computation (and after an error);
 - `failed_attempts`: the attempts that overflowed, as `(value_type, unit_pivots, seconds)`, in order; the last one included when the last type does not suffice (the error is then raised).
 
 Elimination (attempt retained):
-- `unit_pivots`: ±1 pivots of the structured elimination and of the Markowitz loop, that is the elementary divisors equal to 1 found before the core;
-- `markowitz_pivots`: those of the Markowitz loop;
-- `parallel_searches`, `sequential_searches`: bucket scans of the pivot search, parallel or sequential;
-- `parallel_applications`, `sequential_applications`: pivot applications (merges), parallel or sequential.
+- `unit_pivots`: the pivots ±1 of the structured elimination and of the Markowitz loop, that is, the elementary divisors equal to 1 found before the core;
+- `markowitz_pivots`: the pivots of the Markowitz loop;
+- `parallel_searches`, `sequential_searches`: the bucket scans of the pivot search, parallel or sequential;
+- `parallel_applications`, `sequential_applications`: the applications of the pivots (merges), parallel or sequential.
 
 Times, in seconds:
-- `sge_seconds`, `search_seconds`, `apply_seconds`: structured elimination, pivot search, pivot application;
-- `core_seconds`: extraction of the core and its elementary divisors by Hecke.
+- `sge_seconds`, `search_seconds`, `apply_seconds`: the structured elimination, the pivot search and the application of the pivots;
+- `core_seconds`: the extraction of the core and the computation of its elementary divisors by Hecke.
 
 Core and context:
-- `core_size`: `(rows, cols, nnz)` of the core left by the elimination;
+- `core_size`: the `(rows, cols, nnz)` of the core left by the elimination;
 - `core_format`: `:none` (empty core), `:sparse` or `:dense` (see `core_format` in [`ReductionConfig`](@ref));
-- `nworkers`: number of workers used.
+- `nworkers`: the number of workers used.
 """
 mutable struct ReductionStats
     value_type::Union{Nothing, Type}
@@ -701,7 +705,7 @@ end
 """
     ReductionConfig(; kwargs...)
 
-Settings of one attempt of the reduction, each with its default; an immutable value, which can be kept and reused (for instance for all the differentials of a complex). Pass it to [`sparse_elementary_divisors`](@ref) with the keyword `config`; each field can also be given there directly as a keyword, which then takes precedence over `config`:
+The settings of one attempt of the reduction, each with its default. A configuration is an immutable value, which can be kept and reused, for instance for all the differentials of a complex. It is passed to [`sparse_elementary_divisors`](@ref) with the keyword `config`; each field can also be given there directly as a keyword, which then takes precedence over `config`:
 
 ```julia
 cfg = ReductionConfig(nworkers = 4, core_format = :sparse)
@@ -710,7 +714,7 @@ sparse_elementary_divisors(A; config = cfg, nworkers = 1)     # nworkers = 1 win
 sparse_elementary_divisors(A; search_mode = :never)           # without building a config
 ```
 
-No setting changes the elementary divisors; the pivot search parameters change the order of the pivots (hence the time, the fill-in and the size of the coefficients), the others only how the work is done. The values are checked at construction (`ArgumentError`).
+No setting changes the elementary divisors: the parameters of the pivot search change the order of the pivots (hence the time, the fill-in and the size of the coefficients), and the other settings only change how the work is done. The values are checked at construction, and an invalid value raises an `ArgumentError`.
 
 Pivot search (±1 pivots, Markowitz score `(row degree - 1)(column degree - 1)` after Markowitz (1957), columns visited by increasing degree):
 - `acceptable_score_threshold = 4`: the search stops at the first pivot whose score is at most this value (`≥ 0`);
