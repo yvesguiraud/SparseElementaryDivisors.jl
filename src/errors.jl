@@ -1,14 +1,18 @@
 # errors.jl — the dedicated error of the solver.
 
 """
-    CoefficientOverflowError(value_type, unit_pivots, entry)
+    CoefficientOverflowError(
+        value_type::Type,
+        unit_pivots::Int,
+        entry::Union{Nothing, Tuple{Int, Int, BigInt}}
+        )
 
-The integer coefficients do not fit in `value_type`. Raised by
-[`sparse_elementary_divisors`](@ref) when the last type of the sequence given by its keyword `value_type` does not suffice; with the default `value_type = :auto`, whose sequence ends with `BigInt`, it is never raised.
+The exception raised when the integer coefficients do not fit in `value_type`. It is raised by [`sparse_elementary_divisors`](@ref) when the last type of the sequence given by its keyword `value_type` does not suffice; with the default `value_type = :auto`, whose sequence ends with `BigInt`, it is never raised.
 
+Its fields are:
 - `value_type`: the type that overflowed;
-- `unit_pivots`: number of unit pivots done before the overflow (`0` for an input entry);
-- `entry`: `nothing` for an overflow during the elimination, or `(row, column, value)` of an input entry that does not fit in `value_type`.
+- `unit_pivots`: the number of unit pivots done before the overflow (`0` for an input entry);
+- `entry`: `nothing` for an overflow during the elimination, or `(row, column, value)` for an input entry that does not fit in `value_type`.
 """
 struct CoefficientOverflowError <: Exception
     value_type::Type

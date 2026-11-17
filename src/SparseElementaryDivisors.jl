@@ -1,11 +1,15 @@
 """
     SparseElementaryDivisors
 
-Elementary divisors (Smith normal form invariants) of large sparse integer matrices, by exact sparse elimination (unit pivots with Markowitz-style ordering, parallel pivot search and fill-in) followed by Hecke's `elementary_divisors` on the remaining core.
+Elementary divisors (the invariants of the Smith normal form) of large sparse integer matrices. The matrix is first reduced by exact sparse elimination (unit pivots with a Markowitz-style ordering, parallel pivot search and fill-in), and the remaining core is then passed to the function `elementary_divisors` of Hecke.
 
-References (details in the bibliography of the documentation): Markowitz (1957) for the pivot score; LaMacchia and Odlyzko (1991) for the structured elimination; Dumas, Saunders and Villard (2001) on the Smith normal form of large sparse integer matrices; Fieker, Hart, Hofmann and Johansson (2017) for Hecke, with FLINT.
+The methods come from the following references, detailed in the bibliography of the documentation:
+- Markowitz (1957), for the pivot score;
+- LaMacchia and Odlyzko (1991), for the structured elimination;
+- Dumas, Saunders and Villard (2001), on the Smith normal form of large sparse integer matrices;
+- Fieker, Hart, Hofmann and Johansson (2017), for Hecke, with FLINT.
 
-Main entry point: [`sparse_elementary_divisors`](@ref), with its settings [`ReductionConfig`](@ref) and its statistics [`ReductionStats`](@ref). See also [`read_matrix_market`](@ref), [`write_matrix_market`](@ref) and [`magma_elementary_divisors`](@ref) (comparison with Magma, requires a Magma installation).
+The main entry point is [`sparse_elementary_divisors`](@ref), with its settings [`ReductionConfig`](@ref) and its statistics [`ReductionStats`](@ref). See also [`read_matrix_market`](@ref), [`write_matrix_market`](@ref) and [`magma_elementary_divisors`](@ref), for the comparison with Magma, which requires a Magma installation.
 
 Documentation: <https://yvesguiraud.github.io/SparseElementaryDivisors.jl/stable/>
 """
